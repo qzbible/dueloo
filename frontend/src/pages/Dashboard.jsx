@@ -263,6 +263,52 @@ const Dashboard = () => {
             )}
           </Card>
         </motion.div>
+
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-8">
+          <Card 
+            onClick={() => navigate('/duo')}
+            className="p-4 bg-white/10 backdrop-blur-md border-white/20 hover:bg-white/15 transition-all cursor-pointer"
+          >
+            <div className="text-center">
+              <div className="text-3xl mb-2">⚔️</div>
+              <p className="text-white font-semibold">Mode Duo</p>
+              <p className="text-xs text-blue-200">PvP temps réel</p>
+            </div>
+          </Card>
+          
+          <Card 
+            onClick={() => navigate('/group')}
+            className="p-4 bg-white/10 backdrop-blur-md border-white/20 hover:bg-white/15 transition-all cursor-pointer"
+          >
+            <div className="text-center">
+              <div className="text-3xl mb-2">👥</div>
+              <p className="text-white font-semibold">Mode Groupe</p>
+              <p className="text-xs text-blue-200">Sessions PIN</p>
+            </div>
+          </Card>
+          
+          <Card 
+            onClick={() => navigate('/leaderboard')}
+            className="p-4 bg-white/10 backdrop-blur-md border-white/20 hover:bg-white/15 transition-all cursor-pointer"
+          >
+            <div className="text-center">
+              <div className="text-3xl mb-2">🏆</div>
+              <p className="text-white font-semibold">Classement</p>
+              <p className="text-xs text-blue-200">Top joueurs</p>
+            </div>
+          </Card>
+          
+          <Card 
+            onClick={() => navigate('/achievements')}
+            className="p-4 bg-white/10 backdrop-blur-md border-white/20 hover:bg-white/15 transition-all cursor-pointer"
+          >
+            <div className="text-center">
+              <div className="text-3xl mb-2">🎖️</div>
+              <p className="text-white font-semibold">Achievements</p>
+              <p className="text-xs text-blue-200">Récompenses</p>
+            </div>
+          </Card>
+        </div>
       </div>
 
       {showDailyManna && (

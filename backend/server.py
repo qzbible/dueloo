@@ -7,6 +7,8 @@ import os
 import logging
 import uuid
 import httpx
+import random
+import string
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
@@ -756,6 +758,236 @@ def calculate_score(mode_id: str, game_data: dict, user_answers: dict) -> int:
     
     return score
 
+@api_router.get("/leaderboard")
+async def get_leaderboard(period: str = "all_time", category: Optional[str] = None, limit: int = 50):
+    query = {}
+    if category:
+        query["category"] = category
+    if period != "all_time":
+        query["period"] = period
+    
+    leaderboard = await db.leaderboard.find(query, {"_id": 0}).sort("score", -1).limit(limit).to_list(limit)
+    return leaderboard
+
+@api_router.post("/leaderboard/update")
+async def update_leaderboard(request: Request, authorization: Optional[str] = Header(None)):
+    user = await get_current_user(request, authorization)
+    
+    total_score = 0
+    sessions = await db.game_sessions.find({"user_id": user.user_id, "completed": True}, {"_id": 0}).to_list(1000)
+    total_score = sum(s.get("score", 0) for s in sessions)
+    
+    await db.leaderboard.update_one(
+        {"user_id": user.user_id, "period": "all_time"},
+        {"$set": {
+            "user_id": user.user_id,
+            "name": user.name,
+            "picture": user.picture,
+            "score": total_score,
+            "level": user.level,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }},
+        upsert=True
+    )
+    
+    return {"total_score": total_score}
+
+class CreateGroupSessionRequest(BaseModel):
+    name: str
+    max_players: int = 50
+
+@api_router.post("/group/create")
+async def create_group_session(request: Request, session_req: CreateGroupSessionRequest, authorization: Optional[str] = Header(None)):
+    user = await get_current_user(request, authorization)
+    
+    pin_code = ''.join(random.choices(string.digits, k=6))
+    
+    while await db.group_sessions.find_one({"pin_code": pin_code, "active": True}):
+        pin_code = ''.join(random.choices(string.digits, k=6))
+    
+    session = {
+        "session_id": f"group_{uuid.uuid4().hex[:12]}",
+        "pin_code": pin_code,
+        "host_id": user.user_id,
+        "name": session_req.name,
+        "max_players": session_req.max_players,
+        "players": [],
+        "active": True,
+        "started": False,
+        "current_question": 0,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.group_sessions.insert_one(session)
+    
+    return {"session_id": session["session_id"], "pin_code": pin_code}
+
+class JoinGroupRequest(BaseModel):
+    pin_code: str
+    nickname: str
+
+@api_router.post("/group/join")
+async def join_group_session(request: Request, join_req: JoinGroupRequest, authorization: Optional[str] = Header(None)):
+    user = await get_current_user(request, authorization)
+    
+    session = await db.group_sessions.find_one({"pin_code": join_req.pin_code, "active": True}, {"_id": 0})
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session non trouvée")
+    
+    if len(session.get("players", [])) >= session["max_players"]:
+        raise HTTPException(status_code=400, detail="Session pleine")
+    
+    if session.get("started"):
+        raise HTTPException(status_code=400, detail="Session déjà commencée")
+    
+    player = {
+        "user_id": user.user_id,
+        "nickname": join_req.nickname,
+        "picture": user.picture,
+        "score": 0,
+        "joined_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.group_sessions.update_one(
+        {"pin_code": join_req.pin_code},
+        {"$push": {"players": player}}
+    )
+    
+    return {"session_id": session["session_id"], "message": "Rejoint avec succès"}
+
+@api_router.get("/group/{session_id}")
+async def get_group_session(session_id: str, request: Request, authorization: Optional[str] = Header(None)):
+    user = await get_current_user(request, authorization)
+    
+    session = await db.group_sessions.find_one({"session_id": session_id}, {"_id": 0})
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session non trouvée")
+    
+    return session
+
+class DuoMatchRequest(BaseModel):
+    mode: str = "random"
+    friend_code: Optional[str] = None
+
+@api_router.post("/duo/matchmaking")
+async def start_duo_match(request: Request, match_req: DuoMatchRequest, authorization: Optional[str] = Header(None)):
+    user = await get_current_user(request, authorization)
+    
+    if match_req.mode == "friend" and match_req.friend_code:
+        pending_match = await db.duo_matches.find_one(
+            {"friend_code": match_req.friend_code, "status": "waiting"},
+            {"_id": 0}
+        )
+        
+        if pending_match:
+            match_id = pending_match["match_id"]
+            await db.duo_matches.update_one(
+                {"match_id": match_id},
+                {"$set": {
+                    "player2_id": user.user_id,
+                    "player2_name": user.name,
+                    "player2_picture": user.picture,
+                    "status": "ready",
+                    "started_at": datetime.now(timezone.utc).isoformat()
+                }}
+            )
+            
+            return {"match_id": match_id, "role": "player2", "status": "ready"}
+        else:
+            raise HTTPException(status_code=404, detail="Match non trouvé")
+    
+    friend_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+    
+    match = {
+        "match_id": f"duo_{uuid.uuid4().hex[:12]}",
+        "friend_code": friend_code,
+        "player1_id": user.user_id,
+        "player1_name": user.name,
+        "player1_picture": user.picture,
+        "player1_score": 0,
+        "player2_id": None,
+        "player2_name": None,
+        "player2_picture": None,
+        "player2_score": 0,
+        "status": "waiting",
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.duo_matches.insert_one(match)
+    
+    return {"match_id": match["match_id"], "friend_code": friend_code, "role": "player1", "status": "waiting"}
+
+@api_router.get("/duo/{match_id}")
+async def get_duo_match(match_id: str, request: Request, authorization: Optional[str] = Header(None)):
+    user = await get_current_user(request, authorization)
+    
+    match = await db.duo_matches.find_one({"match_id": match_id}, {"_id": 0})
+    
+    if not match:
+        raise HTTPException(status_code=404, detail="Match non trouvé")
+    
+    return match
+
+@api_router.get("/achievements")
+async def get_achievements(request: Request, authorization: Optional[str] = Header(None)):
+    user = await get_current_user(request, authorization)
+    
+    all_achievements = await db.achievements.find({}, {"_id": 0}).to_list(100)
+    user_achievements = await db.user_achievements.find({"user_id": user.user_id}, {"_id": 0}).to_list(100)
+    
+    earned_ids = {ua["achievement_id"] for ua in user_achievements}
+    
+    for achievement in all_achievements:
+        achievement["earned"] = achievement["achievement_id"] in earned_ids
+        if achievement["earned"]:
+            user_ach = next(ua for ua in user_achievements if ua["achievement_id"] == achievement["achievement_id"])
+            achievement["earned_at"] = user_ach.get("earned_at")
+    
+    return all_achievements
+
+@api_router.post("/achievements/check")
+async def check_achievements(request: Request, authorization: Optional[str] = Header(None)):
+    user = await get_current_user(request, authorization)
+    
+    all_achievements = await db.achievements.find({}, {"_id": 0}).to_list(100)
+    user_achievements = await db.user_achievements.find({"user_id": user.user_id}, {"_id": 0}).to_list(100)
+    
+    earned_ids = {ua["achievement_id"] for ua in user_achievements}
+    newly_earned = []
+    
+    for achievement in all_achievements:
+        if achievement["achievement_id"] in earned_ids:
+            continue
+        
+        condition_met = False
+        
+        if achievement["condition_type"] == "level":
+            condition_met = user.level >= achievement["condition_value"]
+        
+        elif achievement["condition_type"] == "games_played":
+            games_count = await db.game_sessions.count_documents({"user_id": user.user_id, "completed": True})
+            condition_met = games_count >= achievement["condition_value"]
+        
+        elif achievement["condition_type"] == "category_master":
+            category_games = await db.game_sessions.count_documents({
+                "user_id": user.user_id,
+                "completed": True
+            })
+            condition_met = category_games >= achievement["condition_value"]
+        
+        if condition_met:
+            user_achievement = {
+                "user_id": user.user_id,
+                "achievement_id": achievement["achievement_id"],
+                "earned_at": datetime.now(timezone.utc).isoformat()
+            }
+            await db.user_achievements.insert_one(user_achievement)
+            newly_earned.append(achievement)
+    
+    return {"newly_earned": newly_earned, "count": len(newly_earned)}
+
 app.include_router(api_router)
 
 app.add_middleware(
@@ -1023,3 +1255,90 @@ async def seed_initial_data():
         ]
         await db.game_modes.insert_many(game_modes)
         logger.info(f"✅ {len(game_modes)} modes de jeu créés")
+    
+    achievements_count = await db.achievements.count_documents({})
+    if achievements_count == 0:
+        achievements = [
+            {
+                "achievement_id": "ach_first_game",
+                "name": "Premier Pas",
+                "icon": "🎮",
+                "description": "Jouer votre premier jeu",
+                "condition_type": "games_played",
+                "condition_value": 1,
+                "category": "general",
+                "xp_reward": 50
+            },
+            {
+                "achievement_id": "ach_10_games",
+                "name": "Joueur Régulier",
+                "icon": "🎯",
+                "description": "Jouer 10 jeux",
+                "condition_type": "games_played",
+                "condition_value": 10,
+                "category": "general",
+                "xp_reward": 100
+            },
+            {
+                "achievement_id": "ach_50_games",
+                "name": "Vétéran",
+                "icon": "🏆",
+                "description": "Jouer 50 jeux",
+                "condition_type": "games_played",
+                "condition_value": 50,
+                "category": "general",
+                "xp_reward": 500
+            },
+            {
+                "achievement_id": "ach_level_5",
+                "name": "Disciple Dévoué",
+                "icon": "⭐",
+                "description": "Atteindre le niveau 5",
+                "condition_type": "level",
+                "condition_value": 5,
+                "category": "progression",
+                "xp_reward": 100
+            },
+            {
+                "achievement_id": "ach_level_15",
+                "name": "Serviteur Fidèle",
+                "icon": "✨",
+                "description": "Atteindre le niveau 15",
+                "condition_type": "level",
+                "condition_value": 15,
+                "category": "progression",
+                "xp_reward": 300
+            },
+            {
+                "achievement_id": "ach_quiz_master",
+                "name": "Maître du Quiz",
+                "icon": "🧠",
+                "description": "Compléter 20 jeux de quiz",
+                "condition_type": "category_master",
+                "condition_value": 20,
+                "category": "quiz",
+                "xp_reward": 200
+            },
+            {
+                "achievement_id": "ach_word_wizard",
+                "name": "Magicien des Mots",
+                "icon": "📝",
+                "description": "Compléter 15 jeux de mots",
+                "condition_type": "category_master",
+                "condition_value": 15,
+                "category": "mots",
+                "xp_reward": 200
+            },
+            {
+                "achievement_id": "ach_speed_demon",
+                "name": "Démon de Vitesse",
+                "icon": "⚡",
+                "description": "Compléter 15 jeux de rapidité",
+                "condition_type": "category_master",
+                "condition_value": 15,
+                "category": "rapidite",
+                "xp_reward": 200
+            }
+        ]
+        await db.achievements.insert_many(achievements)
+        logger.info(f"✅ {len(achievements)} achievements créés")

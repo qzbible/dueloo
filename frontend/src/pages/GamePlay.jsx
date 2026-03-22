@@ -13,6 +13,10 @@ import ChronoVersets from '@/components/games/ChronoVersets';
 import MotsCaches from '@/components/games/MotsCaches';
 import Anagrammes from '@/components/games/Anagrammes';
 import MemoryBiblique from '@/components/games/MemoryBiblique';
+import LaManne from '@/components/games/LaManne';
+import TriLivres from '@/components/games/TriLivres';
+import BrebisPerdue from '@/components/games/BrebisPerdue';
+import MultiplierPains from '@/components/games/MultiplierPains';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -78,7 +82,11 @@ const GamePlay = () => {
       'chrono_versets': ChronoVersets,
       'mots_caches': MotsCaches,
       'anagrammes': Anagrammes,
-      'memory_biblique': MemoryBiblique
+      'memory_biblique': MemoryBiblique,
+      'la_manne': LaManne,
+      'tri_livres': TriLivres,
+      'brebis_perdue': BrebisPerdue,
+      'multiplier_pains': MultiplierPains
     };
 
     const GameComponent = gameComponents[modeId];

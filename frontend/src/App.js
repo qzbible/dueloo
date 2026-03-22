@@ -12,6 +12,10 @@ import Premium from '@/pages/Premium';
 import PremiumSuccess from '@/pages/PremiumSuccess';
 import GameModes from '@/pages/GameModes';
 import GamePlay from '@/pages/GamePlay';
+import ModeDuo from '@/pages/ModeDuo';
+import ModeGroupe from '@/pages/ModeGroupe';
+import Leaderboard from '@/pages/Leaderboard';
+import Achievements from '@/pages/Achievements';
 
 function AppRouter() {
   const location = useLocation();
@@ -28,6 +32,10 @@ function AppRouter() {
       <Route path="/quiz" element={<QuizGame />} />
       <Route path="/games" element={<GameModes />} />
       <Route path="/play/:modeId" element={<GamePlay />} />
+      <Route path="/duo" element={<ModeDuo />} />
+      <Route path="/group" element={<ModeGroupe />} />
+      <Route path="/leaderboard" element={<Leaderboard />} />
+      <Route path="/achievements" element={<Achievements />} />
       <Route path="/premium" element={<Premium />} />
       <Route path="/premium-success" element={<PremiumSuccess />} />
       <Route path="*" element={<Navigate to="/" replace />} />
