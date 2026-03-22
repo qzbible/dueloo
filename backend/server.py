@@ -923,7 +923,7 @@ async def start_duo_match(request: Request, match_req: DuoMatchRequest, authoriz
                     upsert=True
                 )
             
-            return {"match_id": match_id, "role": "player2", "status": "ready"}
+            return {"match_id": match_id, "role": "player2", "status": "ready", "user_id": user.user_id}
         else:
             raise HTTPException(status_code=404, detail="Match non trouvé")
     
@@ -957,7 +957,7 @@ async def start_duo_match(request: Request, match_req: DuoMatchRequest, authoriz
             upsert=True
         )
     
-    return {"match_id": match["match_id"], "friend_code": friend_code, "role": "player1", "status": "waiting"}
+    return {"match_id": match["match_id"], "friend_code": friend_code, "role": "player1", "status": "waiting", "user_id": user.user_id}
 
 async def generate_duo_questions(theme: Optional[str] = None):
     query = {}
@@ -1247,17 +1247,6 @@ async def request_rematch(sid, data):
     
     await sio.emit('rematch_requested', {'from': role}, room=match_id, skip_sid=sid)
 
-@api_router.get("/duo/{match_id}")
-async def get_duo_match(match_id: str, request: Request, authorization: Optional[str] = Header(None)):
-    user = await get_current_user(request, authorization)
-    
-    match = await db.duo_matches.find_one({"match_id": match_id}, {"_id": 0})
-    
-    if not match:
-        raise HTTPException(status_code=404, detail="Match non trouvé")
-    
-    return match
-
 matchmaking_queue = []
 
 @api_router.post("/duo/matchmaking/auto")
@@ -1459,6 +1448,17 @@ async def get_active_matches(request: Request, authorization: Optional[str] = He
     ).limit(20).to_list(20)
     
     return matches
+
+@api_router.get("/duo/{match_id}")
+async def get_duo_match(match_id: str, request: Request, authorization: Optional[str] = Header(None)):
+    user = await get_current_user(request, authorization)
+    
+    match = await db.duo_matches.find_one({"match_id": match_id}, {"_id": 0})
+    
+    if not match:
+        raise HTTPException(status_code=404, detail="Match non trouvé")
+    
+    return match
 
 @api_router.post("/tournaments/create")
 async def create_tournament(request: Request, name: str, start_date: str, authorization: Optional[str] = Header(None)):

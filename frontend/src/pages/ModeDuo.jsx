@@ -30,7 +30,7 @@ const ModeDuo = () => {
       
       setMatchData(response.data);
       setMode('waiting');
-      startPolling(response.data.match_id, response.data.role);
+      startPolling(response.data.match_id, response.data.role, response.data.user_id);
     } catch (error) {
       console.error('Erreur:', error);
       alert('Erreur lors de la création du match');
@@ -51,9 +51,7 @@ const ModeDuo = () => {
       );
       
       setMatchData(response.data);
-      
-      const userRes = await axios.get(`${BACKEND_URL}/api/auth/me`, { withCredentials: true });
-      const userId = userRes.data.user_id;
+      const userId = response.data.user_id;
       
       navigate(`/duo/play/${response.data.match_id}?role=player2&userId=${userId}`);
     } catch (error) {
@@ -62,7 +60,7 @@ const ModeDuo = () => {
     }
   };
 
-  const startPolling = (matchId, role) => {
+  const startPolling = (matchId, role, userId) => {
     const interval = setInterval(async () => {
       try {
         const response = await axios.get(
@@ -72,7 +70,6 @@ const ModeDuo = () => {
         
         if (response.data.status === 'ready') {
           clearInterval(interval);
-          const userId = response.data[`${role}_id`];
           navigate(`/duo/play/${matchId}?role=${role}&userId=${userId}`);
         }
       } catch (error) {
