@@ -14,6 +14,8 @@ import GameModes from '@/pages/GameModes';
 import GamePlay from '@/pages/GamePlay';
 import ModeDuo from '@/pages/ModeDuo';
 import DuoPlay from '@/pages/DuoPlay';
+import DuoHistory from '@/pages/DuoHistory';
+import DuoLeaderboard from '@/pages/DuoLeaderboard';
 import ModeGroupe from '@/pages/ModeGroupe';
 import Leaderboard from '@/pages/Leaderboard';
 import Achievements from '@/pages/Achievements';
@@ -35,6 +37,8 @@ function AppRouter() {
       <Route path="/play/:modeId" element={<GamePlay />} />
       <Route path="/duo" element={<ModeDuo />} />
       <Route path="/duo/play/:matchId" element={<DuoPlay />} />
+      <Route path="/duo/history" element={<DuoHistory />} />
+      <Route path="/duo/leaderboard" element={<DuoLeaderboard />} />
       <Route path="/group" element={<ModeGroupe />} />
       <Route path="/leaderboard" element={<Leaderboard />} />
       <Route path="/achievements" element={<Achievements />} />

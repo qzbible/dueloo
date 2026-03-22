@@ -879,6 +879,7 @@ async def get_group_session(session_id: str, request: Request, authorization: Op
 class DuoMatchRequest(BaseModel):
     mode: str = "random"
     friend_code: Optional[str] = None
+    theme: Optional[str] = None
 
 @api_router.post("/duo/matchmaking")
 async def start_duo_match(request: Request, match_req: DuoMatchRequest, authorization: Optional[str] = Header(None)):
@@ -958,10 +959,26 @@ async def start_duo_match(request: Request, match_req: DuoMatchRequest, authoriz
     
     return {"match_id": match["match_id"], "friend_code": friend_code, "role": "player1", "status": "waiting"}
 
-async def generate_duo_questions():
-    questions = await db.questions.find({}, {"_id": 0}).to_list(100)
+async def generate_duo_questions(theme: Optional[str] = None):
+    query = {}
+    
+    if theme:
+        theme_queries = {
+            "paraboles": {"text": {"$regex": "parabole", "$options": "i"}},
+            "miracles": {"text": {"$regex": "miracle", "$options": "i"}},
+            "ancien": {"book": {"$in": ["Genèse", "Exode", "Lévitique", "Nombres", "Deutéronome", "Josué", "Juges", "Ruth", "Samuel", "Rois", "Chroniques", "Esdras", "Néhémie", "Esther", "Job", "Psaumes", "Proverbes", "Ecclésiaste", "Cantique", "Ésaïe", "Jérémie", "Lamentations", "Ézéchiel", "Daniel", "Osée", "Joël", "Amos", "Abdias", "Jonas", "Michée", "Nahum", "Habacuc", "Sophonie", "Aggée", "Zacharie", "Malachie"]}},
+            "nouveau": {"book": {"$in": ["Matthieu", "Marc", "Luc", "Jean", "Actes", "Romains", "Corinthiens", "Galates", "Éphésiens", "Philippiens", "Colossiens", "Thessaloniciens", "Timothée", "Tite", "Philémon", "Hébreux", "Jacques", "Pierre", "Jean", "Jude", "Apocalypse"]}},
+            "apotres": {"text": {"$regex": "apôtre|Pierre|Jean|Jacques|André|Philippe|Thomas|Matthieu|Barthélemy|Simon|Judas|Paul", "$options": "i"}},
+            "femmes": {"text": {"$regex": "Marie|Marthe|Esther|Ruth|Déborah|Sara|Rebecca|Rachel", "$options": "i"}},
+            "prophetes": {"text": {"$regex": "prophète|Ésaïe|Jérémie|Ézéchiel|Daniel|Osée|Joël|Amos|Jonas|Michée", "$options": "i"}}
+        }
+        
+        query = theme_queries.get(theme.lower(), {})
+    
+    questions = await db.questions.find(query, {"_id": 0}).to_list(100)
     if not questions:
-        return []
+        questions = await db.questions.find({}, {"_id": 0}).to_list(100)
+    
     random.shuffle(questions)
     return questions[:10]
 
@@ -1151,6 +1168,8 @@ async def end_duo_game(match_id):
     await check_duo_badges(match['player1_id'], winner == 'player1', match_id)
     await check_duo_badges(match['player2_id'], winner == 'player2', match_id)
     
+    await update_mmr(match['player1_id'], match['player2_id'], winner, match.get('player1_mmr', 1000), match.get('player2_mmr', 1000))
+    
     final_results = {
         "player1_score": scores['player1'],
         "player2_score": scores['player2'],
@@ -1161,6 +1180,37 @@ async def end_duo_game(match_id):
     
     if match_id in duo_rooms:
         del duo_rooms[match_id]
+
+async def update_mmr(player1_id, player2_id, winner, mmr1, mmr2):
+    k_factor = 30
+    
+    expected1 = 1 / (1 + 10 ** ((mmr2 - mmr1) / 400))
+    expected2 = 1 / (1 + 10 ** ((mmr1 - mmr2) / 400))
+    
+    if winner == 'player1':
+        score1, score2 = 1, 0
+    elif winner == 'player2':
+        score1, score2 = 0, 1
+    else:
+        score1, score2 = 0.5, 0.5
+    
+    new_mmr1 = mmr1 + k_factor * (score1 - expected1)
+    new_mmr2 = mmr2 + k_factor * (score2 - expected2)
+    
+    new_mmr1 = max(0, int(new_mmr1))
+    new_mmr2 = max(0, int(new_mmr2))
+    
+    for user_id, new_mmr, won in [(player1_id, new_mmr1, winner == 'player1'), (player2_id, new_mmr2, winner == 'player2')]:
+        result = "wins" if won else "draws" if winner == "draw" else "losses"
+        
+        await db.duo_leaderboard.update_one(
+            {"user_id": user_id},
+            {
+                "$set": {"mmr": new_mmr},
+                "$inc": {result: 1}
+            },
+            upsert=True
+        )
 
 async def check_duo_badges(user_id, won, match_id):
     match_count = await db.duo_matches.count_documents({
@@ -1207,6 +1257,263 @@ async def get_duo_match(match_id: str, request: Request, authorization: Optional
         raise HTTPException(status_code=404, detail="Match non trouvé")
     
     return match
+
+matchmaking_queue = []
+
+@api_router.post("/duo/matchmaking/auto")
+async def auto_matchmaking(request: Request, match_req: DuoMatchRequest, authorization: Optional[str] = Header(None)):
+    user = await get_current_user(request, authorization)
+    
+    today = datetime.now(timezone.utc).date().isoformat()
+    quota = await db.duo_quotas.find_one({"user_id": user.user_id, "date": today}, {"_id": 0})
+    
+    if not user.is_premium:
+        daily_count = quota.get("count", 0) if quota else 0
+        if daily_count >= 3:
+            raise HTTPException(status_code=403, detail="Limite de 3 duels/jour atteinte. Passez Premium pour illimité !")
+    
+    user_stats = await db.duo_leaderboard.find_one({"user_id": user.user_id}, {"_id": 0})
+    user_mmr = user_stats.get("mmr", 1000) if user_stats else 1000
+    
+    theme = match_req.theme if user.is_premium else None
+    
+    matched_opponent = None
+    for i, queued in enumerate(matchmaking_queue):
+        mmr_diff = abs(queued["mmr"] - user_mmr)
+        if mmr_diff <= 200 and queued["user_id"] != user.user_id:
+            matched_opponent = queued
+            matchmaking_queue.pop(i)
+            break
+    
+    if matched_opponent:
+        questions = await generate_duo_questions(theme)
+        
+        match = {
+            "match_id": f"duo_{uuid.uuid4().hex[:12]}",
+            "friend_code": None,
+            "player1_id": matched_opponent["user_id"],
+            "player1_name": matched_opponent["name"],
+            "player1_picture": matched_opponent["picture"],
+            "player1_score": 0,
+            "player1_answers": [],
+            "player1_mmr": matched_opponent["mmr"],
+            "player2_id": user.user_id,
+            "player2_name": user.name,
+            "player2_picture": user.picture,
+            "player2_score": 0,
+            "player2_answers": [],
+            "player2_mmr": user_mmr,
+            "status": "ready",
+            "current_question": 0,
+            "questions": questions,
+            "theme": theme,
+            "matchmaking_type": "auto",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        await db.duo_matches.insert_one(match)
+        
+        if not user.is_premium:
+            await db.duo_quotas.update_one(
+                {"user_id": user.user_id, "date": today},
+                {"$inc": {"count": 1}, "$setOnInsert": {"date": today}},
+                upsert=True
+            )
+        
+        return {"match_id": match["match_id"], "role": "player2", "status": "ready", "opponent": matched_opponent["name"]}
+    
+    else:
+        matchmaking_queue.append({
+            "user_id": user.user_id,
+            "name": user.name,
+            "picture": user.picture,
+            "mmr": user_mmr,
+            "theme": theme,
+            "timestamp": datetime.now(timezone.utc).timestamp()
+        })
+        
+        return {"status": "queued", "message": "En recherche d'adversaire...", "position": len(matchmaking_queue)}
+
+@api_router.post("/duo/matchmaking/cancel")
+async def cancel_matchmaking(request: Request, authorization: Optional[str] = Header(None)):
+    user = await get_current_user(request, authorization)
+    
+    global matchmaking_queue
+    matchmaking_queue = [q for q in matchmaking_queue if q["user_id"] != user.user_id]
+    
+    return {"message": "Matchmaking annulé"}
+
+@api_router.get("/duo/history")
+async def get_duo_history(request: Request, authorization: Optional[str] = Header(None), filter: str = "all", limit: int = 50):
+    user = await get_current_user(request, authorization)
+    
+    if not user.is_premium:
+        raise HTTPException(status_code=403, detail="Fonctionnalité réservée Premium")
+    
+    query = {
+        "$or": [{"player1_id": user.user_id}, {"player2_id": user.user_id}],
+        "status": "completed"
+    }
+    
+    if filter == "wins":
+        query["winner"] = {"$in": ["player1", "player2"]}
+    elif filter == "losses":
+        query["$and"] = [
+            {"$or": [{"player1_id": user.user_id}, {"player2_id": user.user_id}]},
+            {"winner": {"$nin": ["player1", "player2", "draw"]}}
+        ]
+    elif filter == "draws":
+        query["winner"] = "draw"
+    
+    matches = await db.duo_matches.find(query, {"_id": 0}).sort("completed_at", -1).limit(limit).to_list(limit)
+    
+    history = []
+    for match in matches:
+        is_player1 = match["player1_id"] == user.user_id
+        opponent_name = match["player2_name"] if is_player1 else match["player1_name"]
+        my_score = match["player1_score"] if is_player1 else match["player2_score"]
+        opp_score = match["player2_score"] if is_player1 else match["player1_score"]
+        
+        result = "win" if (is_player1 and match["winner"] == "player1") or (not is_player1 and match["winner"] == "player2") else "loss" if match["winner"] != "draw" else "draw"
+        
+        history.append({
+            "match_id": match["match_id"],
+            "opponent": opponent_name,
+            "my_score": my_score,
+            "opponent_score": opp_score,
+            "result": result,
+            "theme": match.get("theme"),
+            "completed_at": match.get("completed_at"),
+            "questions": match.get("questions") if user.is_premium else None
+        })
+    
+    return history
+
+@api_router.get("/duo/stats")
+async def get_duo_stats(request: Request, authorization: Optional[str] = Header(None)):
+    user = await get_current_user(request, authorization)
+    
+    stats = await db.duo_leaderboard.find_one({"user_id": user.user_id}, {"_id": 0})
+    
+    if not stats:
+        return {
+            "mmr": 1000,
+            "wins": 0,
+            "losses": 0,
+            "draws": 0,
+            "winrate": 0,
+            "total_matches": 0,
+            "rank": None
+        }
+    
+    total = stats["wins"] + stats["losses"] + stats["draws"]
+    winrate = (stats["wins"] / total * 100) if total > 0 else 0
+    
+    rank = await db.duo_leaderboard.count_documents({"mmr": {"$gt": stats["mmr"]}}) + 1
+    
+    return {
+        "mmr": stats["mmr"],
+        "wins": stats["wins"],
+        "losses": stats["losses"],
+        "draws": stats["draws"],
+        "winrate": round(winrate, 1),
+        "total_matches": total,
+        "rank": rank
+    }
+
+@api_router.get("/duo/leaderboard")
+async def get_duo_leaderboard(limit: int = 100):
+    leaderboard = await db.duo_leaderboard.find({}, {"_id": 0}).sort("mmr", -1).limit(limit).to_list(limit)
+    
+    enriched = []
+    for idx, entry in enumerate(leaderboard):
+        user_doc = await db.users.find_one({"user_id": entry["user_id"]}, {"_id": 0, "name": 1, "picture": 1, "level": 1})
+        
+        if user_doc:
+            total = entry["wins"] + entry["losses"] + entry["draws"]
+            winrate = (entry["wins"] / total * 100) if total > 0 else 0
+            
+            enriched.append({
+                "rank": idx + 1,
+                "user_id": entry["user_id"],
+                "name": user_doc.get("name", "Inconnu"),
+                "picture": user_doc.get("picture"),
+                "level": user_doc.get("level", 1),
+                "mmr": entry["mmr"],
+                "wins": entry["wins"],
+                "losses": entry["losses"],
+                "draws": entry["draws"],
+                "winrate": round(winrate, 1),
+                "total_matches": total
+            })
+    
+    return enriched
+
+@api_router.get("/duo/active-matches")
+async def get_active_matches(request: Request, authorization: Optional[str] = Header(None)):
+    user = await get_current_user(request, authorization)
+    
+    matches = await db.duo_matches.find(
+        {"status": {"$in": ["ready", "playing"]}, "started_at": {"$exists": True}},
+        {"_id": 0, "match_id": 1, "player1_name": 1, "player2_name": 1, "player1_score": 1, "player2_score": 1, "current_question": 1}
+    ).limit(20).to_list(20)
+    
+    return matches
+
+@api_router.post("/tournaments/create")
+async def create_tournament(request: Request, name: str, start_date: str, authorization: Optional[str] = Header(None)):
+    user = await get_current_user(request, authorization)
+    
+    tournament = {
+        "tournament_id": f"tour_{uuid.uuid4().hex[:12]}",
+        "name": name,
+        "organizer_id": user.user_id,
+        "start_date": start_date,
+        "status": "registration",
+        "participants": [],
+        "brackets": [],
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.tournaments.insert_one(tournament)
+    
+    return {"tournament_id": tournament["tournament_id"], "message": "Tournoi créé"}
+
+@api_router.post("/tournaments/{tournament_id}/register")
+async def register_tournament(tournament_id: str, request: Request, authorization: Optional[str] = Header(None)):
+    user = await get_current_user(request, authorization)
+    
+    tournament = await db.tournaments.find_one({"tournament_id": tournament_id}, {"_id": 0})
+    
+    if not tournament:
+        raise HTTPException(status_code=404, detail="Tournoi non trouvé")
+    
+    if tournament["status"] != "registration":
+        raise HTTPException(status_code=400, detail="Inscriptions fermées")
+    
+    if any(p["user_id"] == user.user_id for p in tournament["participants"]):
+        raise HTTPException(status_code=400, detail="Déjà inscrit")
+    
+    await db.tournaments.update_one(
+        {"tournament_id": tournament_id},
+        {"$push": {"participants": {
+            "user_id": user.user_id,
+            "name": user.name,
+            "picture": user.picture,
+            "registered_at": datetime.now(timezone.utc).isoformat()
+        }}}
+    )
+    
+    return {"message": "Inscription réussie"}
+
+@api_router.get("/tournaments/active")
+async def get_active_tournaments():
+    tournaments = await db.tournaments.find(
+        {"status": {"$in": ["registration", "ongoing"]}},
+        {"_id": 0}
+    ).sort("start_date", 1).to_list(10)
+    
+    return tournaments
 
 @api_router.get("/achievements")
 async def get_achievements(request: Request, authorization: Optional[str] = Header(None)):

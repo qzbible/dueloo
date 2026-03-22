@@ -15,6 +15,10 @@ const ModeDuo = () => {
   const [friendCode, setFriendCode] = useState('');
   const [matchData, setMatchData] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [selectedTheme, setSelectedTheme] = useState(null);
+  const [showThemeModal, setShowThemeModal] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [queuePosition, setQueuePosition] = useState(0);
 
   const createMatch = async () => {
     try {
@@ -149,6 +153,23 @@ const ModeDuo = () => {
             Mode Duo
           </h1>
           <p className="text-lg text-blue-200">Défiez un ami en temps réel !</p>
+          
+          <div className="flex gap-3 justify-center mt-6">
+            <Button
+              onClick={() => navigate('/duo/history')}
+              variant="outline"
+              className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+            >
+              📊 Historique
+            </Button>
+            <Button
+              onClick={() => navigate('/duo/leaderboard')}
+              variant="outline"
+              className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+            >
+              🏆 Classement
+            </Button>
+          </div>
         </motion.div>
 
         <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
