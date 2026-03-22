@@ -42,6 +42,9 @@ Create "BibleQuest" - a web application to modernize Christian education through
 - **2025-02-XX:** Fixed `userId=undefined` in Duo Mode challenge link (P0)
   - Root cause: Backend matchmaking API didn't return `user_id`; FastAPI route ordering conflict
   - Fix: Added `user_id` to matchmaking response; moved dynamic `{match_id}` route after static routes
+- **2025-02-XX:** Fixed Socket.IO connection hanging on "Connexion au match..." (P0)
+  - Root cause: Socket.IO path `/socket.io/` not routed through Kubernetes ingress (only `/api/*` is proxied to backend)
+  - Fix: Configured Socket.IO to use `/api/socket.io` path on both backend and frontend
 
 ## Prioritized Backlog
 

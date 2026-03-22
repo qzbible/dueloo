@@ -39,6 +39,7 @@ const DuoPlay = () => {
     setMyRole(role);
 
     socketRef.current = io(BACKEND_URL, {
+      path: '/api/socket.io',
       transports: ['websocket', 'polling'],
       reconnection: true
     });

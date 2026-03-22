@@ -31,7 +31,7 @@ sio = socketio.AsyncServer(
 )
 
 app = FastAPI()
-socket_app = socketio.ASGIApp(sio, app)
+socket_app = socketio.ASGIApp(sio, app, socketio_path='api/socket.io')
 api_router = APIRouter(prefix="/api")
 
 STRIPE_API_KEY = os.getenv('STRIPE_API_KEY', 'sk_test_emergent')
