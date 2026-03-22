@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+import socketio
 import os
 import logging
 import uuid
@@ -22,7 +23,15 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
+sio = socketio.AsyncServer(
+    async_mode='asgi',
+    cors_allowed_origins='*',
+    logger=True,
+    engineio_logger=False
+)
+
 app = FastAPI()
+socket_app = socketio.ASGIApp(sio, app)
 api_router = APIRouter(prefix="/api")
 
 STRIPE_API_KEY = os.getenv('STRIPE_API_KEY', 'sk_test_emergent')
@@ -875,6 +884,14 @@ class DuoMatchRequest(BaseModel):
 async def start_duo_match(request: Request, match_req: DuoMatchRequest, authorization: Optional[str] = Header(None)):
     user = await get_current_user(request, authorization)
     
+    today = datetime.now(timezone.utc).date().isoformat()
+    quota = await db.duo_quotas.find_one({"user_id": user.user_id, "date": today}, {"_id": 0})
+    
+    if not user.is_premium:
+        daily_count = quota.get("count", 0) if quota else 0
+        if daily_count >= 3:
+            raise HTTPException(status_code=403, detail="Limite de 3 duels/jour atteinte. Passez Premium pour illimité !")
+    
     if match_req.mode == "friend" and match_req.friend_code:
         pending_match = await db.duo_matches.find_one(
             {"friend_code": match_req.friend_code, "status": "waiting"},
@@ -883,6 +900,9 @@ async def start_duo_match(request: Request, match_req: DuoMatchRequest, authoriz
         
         if pending_match:
             match_id = pending_match["match_id"]
+            
+            questions = await generate_duo_questions()
+            
             await db.duo_matches.update_one(
                 {"match_id": match_id},
                 {"$set": {
@@ -890,9 +910,17 @@ async def start_duo_match(request: Request, match_req: DuoMatchRequest, authoriz
                     "player2_name": user.name,
                     "player2_picture": user.picture,
                     "status": "ready",
+                    "questions": questions,
                     "started_at": datetime.now(timezone.utc).isoformat()
                 }}
             )
+            
+            if not user.is_premium:
+                await db.duo_quotas.update_one(
+                    {"user_id": user.user_id, "date": today},
+                    {"$inc": {"count": 1}, "$setOnInsert": {"date": today}},
+                    upsert=True
+                )
             
             return {"match_id": match_id, "role": "player2", "status": "ready"}
         else:
@@ -907,17 +935,267 @@ async def start_duo_match(request: Request, match_req: DuoMatchRequest, authoriz
         "player1_name": user.name,
         "player1_picture": user.picture,
         "player1_score": 0,
+        "player1_answers": [],
         "player2_id": None,
         "player2_name": None,
         "player2_picture": None,
         "player2_score": 0,
+        "player2_answers": [],
         "status": "waiting",
+        "current_question": 0,
+        "questions": [],
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
     await db.duo_matches.insert_one(match)
     
+    if not user.is_premium:
+        await db.duo_quotas.update_one(
+            {"user_id": user.user_id, "date": today},
+            {"$inc": {"count": 1}, "$setOnInsert": {"date": today}},
+            upsert=True
+        )
+    
     return {"match_id": match["match_id"], "friend_code": friend_code, "role": "player1", "status": "waiting"}
+
+async def generate_duo_questions():
+    questions = await db.questions.find({}, {"_id": 0}).to_list(100)
+    if not questions:
+        return []
+    random.shuffle(questions)
+    return questions[:10]
+
+duo_rooms = {}
+
+@sio.event
+async def connect(sid, environ):
+    logger.info(f"Client connected: {sid}")
+
+@sio.event
+async def disconnect(sid):
+    logger.info(f"Client disconnected: {sid}")
+    
+    for room_id, room_data in list(duo_rooms.items()):
+        if sid in room_data.get('players', {}):
+            player_role = 'player1' if room_data['players'].get('player1') == sid else 'player2'
+            await sio.emit('opponent_disconnected', {'message': 'Adversaire déconnecté'}, room=room_id, skip_sid=sid)
+            if room_id in duo_rooms:
+                del duo_rooms[room_id]
+
+@sio.event
+async def join_duo_room(sid, data):
+    match_id = data.get('match_id')
+    user_id = data.get('user_id')
+    role = data.get('role')
+    
+    if not match_id:
+        return
+    
+    await sio.enter_room(sid, match_id)
+    
+    if match_id not in duo_rooms:
+        duo_rooms[match_id] = {
+            'players': {},
+            'ready': {},
+            'answers': {},
+            'scores': {'player1': 0, 'player2': 0},
+            'current_question': 0
+        }
+    
+    duo_rooms[match_id]['players'][role] = sid
+    duo_rooms[match_id]['ready'][role] = False
+    
+    await sio.emit('joined_room', {'role': role}, room=sid)
+    
+    if len(duo_rooms[match_id]['players']) == 2:
+        await sio.emit('both_players_ready', {}, room=match_id)
+
+@sio.event
+async def player_ready(sid, data):
+    match_id = data.get('match_id')
+    role = data.get('role')
+    
+    if match_id not in duo_rooms:
+        return
+    
+    duo_rooms[match_id]['ready'][role] = True
+    
+    await sio.emit('player_ready_status', {'role': role, 'ready': True}, room=match_id)
+    
+    if all(duo_rooms[match_id]['ready'].values()):
+        await sio.sleep(3)
+        await start_duo_game(match_id)
+
+async def start_duo_game(match_id):
+    match = await db.duo_matches.find_one({"match_id": match_id}, {"_id": 0})
+    
+    if not match or not match.get('questions'):
+        return
+    
+    await send_next_question(match_id, 0, match['questions'])
+
+async def send_next_question(match_id, question_index, questions):
+    if question_index >= len(questions):
+        await end_duo_game(match_id)
+        return
+    
+    question = questions[question_index]
+    
+    question_data = {
+        "question_index": question_index,
+        "total_questions": len(questions),
+        "text": question["text"],
+        "options": question["options"],
+        "book": question.get("book", ""),
+        "timer": 15
+    }
+    
+    duo_rooms[match_id]['answers'] = {}
+    duo_rooms[match_id]['start_time'] = datetime.now(timezone.utc).timestamp()
+    
+    await sio.emit('new_question', question_data, room=match_id)
+
+@sio.event
+async def submit_answer(sid, data):
+    match_id = data.get('match_id')
+    role = data.get('role')
+    answer_index = data.get('answer')
+    
+    if match_id not in duo_rooms:
+        return
+    
+    answer_time = datetime.now(timezone.utc).timestamp()
+    time_taken = answer_time - duo_rooms[match_id]['start_time']
+    
+    duo_rooms[match_id]['answers'][role] = {
+        'answer': answer_index,
+        'time': time_taken
+    }
+    
+    await sio.emit('opponent_answered', {'role': role}, room=match_id, skip_sid=sid)
+    
+    if len(duo_rooms[match_id]['answers']) == 2:
+        await process_round_results(match_id)
+
+async def process_round_results(match_id):
+    match = await db.duo_matches.find_one({"match_id": match_id}, {"_id": 0})
+    
+    if not match:
+        return
+    
+    current_q = duo_rooms[match_id]['current_question']
+    question = match['questions'][current_q]
+    correct_answer = question['correct_answer']
+    
+    results = {}
+    
+    for role in ['player1', 'player2']:
+        if role in duo_rooms[match_id]['answers']:
+            answer_data = duo_rooms[match_id]['answers'][role]
+            is_correct = answer_data['answer'] == correct_answer
+            time_taken = answer_data['time']
+            
+            points = 0
+            if is_correct:
+                time_bonus = max(0, 15 - time_taken) / 15
+                points = int(100 + (100 * time_bonus))
+            
+            duo_rooms[match_id]['scores'][role] += points
+            
+            results[role] = {
+                'correct': is_correct,
+                'points': points,
+                'time': round(time_taken, 2),
+                'total_score': duo_rooms[match_id]['scores'][role]
+            }
+    
+    results['correct_answer'] = correct_answer
+    
+    await sio.emit('round_results', results, room=match_id)
+    
+    await db.duo_matches.update_one(
+        {"match_id": match_id},
+        {"$set": {
+            f"player1_score": duo_rooms[match_id]['scores']['player1'],
+            f"player2_score": duo_rooms[match_id]['scores']['player2']
+        }}
+    )
+    
+    await sio.sleep(3)
+    
+    duo_rooms[match_id]['current_question'] += 1
+    await send_next_question(match_id, duo_rooms[match_id]['current_question'], match['questions'])
+
+async def end_duo_game(match_id):
+    scores = duo_rooms[match_id]['scores']
+    
+    match = await db.duo_matches.find_one({"match_id": match_id}, {"_id": 0})
+    
+    winner = None
+    if scores['player1'] > scores['player2']:
+        winner = 'player1'
+    elif scores['player2'] > scores['player1']:
+        winner = 'player2'
+    else:
+        winner = 'draw'
+    
+    await db.duo_matches.update_one(
+        {"match_id": match_id},
+        {"$set": {
+            "status": "completed",
+            "winner": winner,
+            "completed_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    await check_duo_badges(match['player1_id'], winner == 'player1', match_id)
+    await check_duo_badges(match['player2_id'], winner == 'player2', match_id)
+    
+    final_results = {
+        "player1_score": scores['player1'],
+        "player2_score": scores['player2'],
+        "winner": winner
+    }
+    
+    await sio.emit('game_end', final_results, room=match_id)
+    
+    if match_id in duo_rooms:
+        del duo_rooms[match_id]
+
+async def check_duo_badges(user_id, won, match_id):
+    match_count = await db.duo_matches.count_documents({
+        "$or": [{"player1_id": user_id}, {"player2_id": user_id}],
+        "status": "completed"
+    })
+    
+    if match_count == 1:
+        await award_badge(user_id, "badge_premier_duel")
+    elif match_count == 10:
+        await award_badge(user_id, "badge_veteranUEL")
+
+async def award_badge(user_id, badge_id):
+    existing = await db.user_achievements.find_one({"user_id": user_id, "achievement_id": badge_id})
+    if not existing:
+        await db.user_achievements.insert_one({
+            "user_id": user_id,
+            "achievement_id": badge_id,
+            "earned_at": datetime.now(timezone.utc).isoformat()
+        })
+
+@sio.event
+async def send_emoji(sid, data):
+    match_id = data.get('match_id')
+    emoji = data.get('emoji')
+    role = data.get('role')
+    
+    await sio.emit('emoji_received', {'emoji': emoji, 'from': role}, room=match_id, skip_sid=sid)
+
+@sio.event
+async def request_rematch(sid, data):
+    match_id = data.get('match_id')
+    role = data.get('role')
+    
+    await sio.emit('rematch_requested', {'from': role}, room=match_id, skip_sid=sid)
 
 @api_router.get("/duo/{match_id}")
 async def get_duo_match(match_id: str, request: Request, authorization: Optional[str] = Header(None)):
@@ -1338,7 +1616,59 @@ async def seed_initial_data():
                 "condition_value": 15,
                 "category": "rapidite",
                 "xp_reward": 200
+            },
+            {
+                "achievement_id": "badge_premier_duel",
+                "name": "Premier Duel",
+                "icon": "⚔️",
+                "description": "Terminer votre premier duel",
+                "condition_type": "duo_played",
+                "condition_value": 1,
+                "category": "duo",
+                "xp_reward": 100
+            },
+            {
+                "achievement_id": "badge_veteran_duel",
+                "name": "Vétéran du Duel",
+                "icon": "🛡️",
+                "description": "Terminer 10 duels",
+                "condition_type": "duo_played",
+                "condition_value": 10,
+                "category": "duo",
+                "xp_reward": 300
+            },
+            {
+                "achievement_id": "badge_pacificateur",
+                "name": "Pacificateur",
+                "icon": "🕊️",
+                "description": "Faire 5 matchs nuls d'affilée",
+                "condition_type": "duo_draws",
+                "condition_value": 5,
+                "category": "duo",
+                "xp_reward": 250
+            },
+            {
+                "achievement_id": "badge_fidele_ami",
+                "name": "Fidèle Ami",
+                "icon": "🤝",
+                "description": "Jouer 10 fois contre la même personne",
+                "condition_type": "duo_same_opponent",
+                "condition_value": 10,
+                "category": "duo",
+                "xp_reward": 200
+            },
+            {
+                "achievement_id": "badge_eclair_divin",
+                "name": "Éclair Divin",
+                "icon": "⚡",
+                "description": "Répondre juste en moins d'1 seconde",
+                "condition_type": "duo_speed",
+                "condition_value": 1,
+                "category": "duo",
+                "xp_reward": 150
             }
         ]
         await db.achievements.insert_many(achievements)
         logger.info(f"✅ {len(achievements)} achievements créés")
+
+app = socket_app
