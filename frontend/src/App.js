@@ -10,6 +10,8 @@ import Campaign from '@/pages/Campaign';
 import QuizGame from '@/pages/QuizGame';
 import Premium from '@/pages/Premium';
 import PremiumSuccess from '@/pages/PremiumSuccess';
+import GameModes from '@/pages/GameModes';
+import GamePlay from '@/pages/GamePlay';
 
 function AppRouter() {
   const location = useLocation();
@@ -24,6 +26,8 @@ function AppRouter() {
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/campaign" element={<Campaign />} />
       <Route path="/quiz" element={<QuizGame />} />
+      <Route path="/games" element={<GameModes />} />
+      <Route path="/play/:modeId" element={<GamePlay />} />
       <Route path="/premium" element={<Premium />} />
       <Route path="/premium-success" element={<PremiumSuccess />} />
       <Route path="*" element={<Navigate to="/" replace />} />

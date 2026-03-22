@@ -529,6 +529,233 @@ async def stripe_webhook(request: Request):
         logging.error(f"Erreur webhook: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
+@api_router.get("/game-modes")
+async def get_game_modes(request: Request, authorization: Optional[str] = Header(None), category: Optional[str] = None):
+    user = await get_current_user(request, authorization)
+    
+    query = {}
+    if category:
+        query["category"] = category
+    
+    modes = await db.game_modes.find(query, {"_id": 0}).to_list(100)
+    return modes
+
+@api_router.get("/game-modes/categories")
+async def get_game_categories():
+    pipeline = [
+        {"$group": {"_id": "$category", "count": {"$sum": 1}}},
+        {"$sort": {"_id": 1}}
+    ]
+    categories = await db.game_modes.aggregate(pipeline).to_list(100)
+    return [{"name": cat["_id"], "count": cat["count"]} for cat in categories]
+
+class GameStartRequest(BaseModel):
+    mode_id: str
+
+@api_router.post("/games/start")
+async def start_game(request: Request, game_request: GameStartRequest, authorization: Optional[str] = Header(None)):
+    user = await get_current_user(request, authorization)
+    
+    mode = await db.game_modes.find_one({"mode_id": game_request.mode_id}, {"_id": 0})
+    if not mode:
+        raise HTTPException(status_code=404, detail="Mode de jeu non trouvé")
+    
+    if not mode.get("available", False):
+        raise HTTPException(status_code=403, detail="Ce mode n'est pas encore disponible")
+    
+    game_data = await generate_game_data(game_request.mode_id)
+    
+    session_id = f"game_{uuid.uuid4().hex[:12]}"
+    game_session = {
+        "session_id": session_id,
+        "user_id": user.user_id,
+        "mode_id": game_request.mode_id,
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "completed": False,
+        "score": 0,
+        "data": game_data
+    }
+    
+    await db.game_sessions.insert_one(game_session)
+    
+    return {"session_id": session_id, "game_data": game_data, "mode": mode}
+
+async def generate_game_data(mode_id: str):
+    if mode_id == "quiz_qui_a_dit":
+        quotes = [
+            {"text": "Je suis le chemin, la vérité et la vie", "author": "Jésus", "options": ["Pierre", "Jésus", "Paul", "Jean"]},
+            {"text": "Me voici, envoie-moi", "author": "Ésaïe", "options": ["Moïse", "David", "Ésaïe", "Jérémie"]},
+            {"text": "L'Éternel est mon berger", "author": "David", "options": ["Salomon", "David", "Samuel", "Élie"]},
+            {"text": "Avant que tu naisses, je t'ai connu", "author": "Dieu", "options": ["Dieu", "Moïse", "Abraham", "Jacob"]},
+            {"text": "Que ton règne vienne", "author": "Jésus", "options": ["Jean", "Pierre", "Jésus", "Matthieu"]}
+        ]
+        import random
+        random.shuffle(quotes)
+        return {"quotes": quotes[:5]}
+    
+    elif mode_id == "quiz_vrai_faux":
+        statements = [
+            {"text": "Jésus a changé l'eau en vin à Cana", "answer": True},
+            {"text": "Moïse a traversé la mer Morte", "answer": False},
+            {"text": "David a vaincu Goliath avec une épée", "answer": False},
+            {"text": "Jonas a été avalé par un grand poisson", "answer": True},
+            {"text": "Marie-Madeleine était l'épouse de Jésus", "answer": False},
+            {"text": "Pierre a marché sur l'eau", "answer": True},
+            {"text": "Abraham avait 100 ans quand Isaac est né", "answer": True},
+            {"text": "Il y a 13 apôtres", "answer": False}
+        ]
+        import random
+        random.shuffle(statements)
+        return {"statements": statements[:6]}
+    
+    elif mode_id == "chrono_versets":
+        verses = [
+            {"text": "Car Dieu a tant aimé le monde qu'il a donné son Fils unique", "missing": "monde", "reference": "Jean 3:16"},
+            {"text": "L'Éternel est mon berger, je ne manquerai de rien", "missing": "berger", "reference": "Psaume 23:1"},
+            {"text": "Je puis tout par celui qui me fortifie", "missing": "fortifie", "reference": "Philippiens 4:13"},
+            {"text": "Demandez et vous recevrez", "missing": "recevrez", "reference": "Matthieu 7:7"}
+        ]
+        import random
+        random.shuffle(verses)
+        return {"verses": verses[:3]}
+    
+    elif mode_id == "mots_caches":
+        grid_size = 10
+        words = ["GENESE", "EXODE", "JEAN", "MARC", "LUC", "ACTES"]
+        return {"grid_size": grid_size, "words": words, "grid": generate_word_search_grid(words, grid_size)}
+    
+    elif mode_id == "anagrammes":
+        anagrams = [
+            {"scrambled": "OSMEI", "answer": "MOISE"},
+            {"scrambled": "VDDAI", "answer": "DAVID"},
+            {"text": "EHERST", "answer": "ESTHER"},
+            {"scrambled": "ULAP", "answer": "PAUL"},
+            {"scrambled": "RREIPE", "answer": "PIERRE"}
+        ]
+        import random
+        random.shuffle(anagrams)
+        return {"anagrams": anagrams[:4]}
+    
+    elif mode_id == "memory_biblique":
+        symbols = ["✝️", "🕊️", "🍞", "🐟", "⚓", "🌟", "💒", "📖"]
+        cards = []
+        for symbol in symbols:
+            cards.append({"id": f"{symbol}_1", "symbol": symbol})
+            cards.append({"id": f"{symbol}_2", "symbol": symbol})
+        import random
+        random.shuffle(cards)
+        return {"cards": cards}
+    
+    return {}
+
+def generate_word_search_grid(words: List[str], size: int) -> List[List[str]]:
+    import random
+    grid = [['' for _ in range(size)] for _ in range(size)]
+    
+    for word in words:
+        placed = False
+        attempts = 0
+        while not placed and attempts < 50:
+            direction = random.choice(['H', 'V'])
+            if direction == 'H':
+                row = random.randint(0, size-1)
+                col = random.randint(0, size-len(word))
+                if all(grid[row][col+i] in ('', word[i]) for i in range(len(word))):
+                    for i, char in enumerate(word):
+                        grid[row][col+i] = char
+                    placed = True
+            else:
+                row = random.randint(0, size-len(word))
+                col = random.randint(0, size-1)
+                if all(grid[row+i][col] in ('', word[i]) for i in range(len(word))):
+                    for i, char in enumerate(word):
+                        grid[row+i][col] = char
+                    placed = True
+            attempts += 1
+    
+    for i in range(size):
+        for j in range(size):
+            if grid[i][j] == '':
+                grid[i][j] = random.choice('ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+    
+    return grid
+
+class GameSubmitRequest(BaseModel):
+    session_id: str
+    answers: Dict[str, Any]
+
+@api_router.post("/games/submit")
+async def submit_game(request: Request, submit_request: GameSubmitRequest, authorization: Optional[str] = Header(None)):
+    user = await get_current_user(request, authorization)
+    
+    session = await db.game_sessions.find_one(
+        {"session_id": submit_request.session_id, "user_id": user.user_id},
+        {"_id": 0}
+    )
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+    
+    if session.get("completed"):
+        raise HTTPException(status_code=400, detail="Cette session est déjà terminée")
+    
+    score = calculate_score(session["mode_id"], session["data"], submit_request.answers)
+    
+    await db.game_sessions.update_one(
+        {"session_id": submit_request.session_id},
+        {"$set": {
+            "completed": True,
+            "score": score,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "user_answers": submit_request.answers
+        }}
+    )
+    
+    xp_gained = score * 5
+    new_xp = user.xp + xp_gained
+    new_level = user.level
+    
+    xp_for_next_level = new_level * 100
+    while new_xp >= xp_for_next_level:
+        new_xp -= xp_for_next_level
+        new_level += 1
+        xp_for_next_level = new_level * 100
+    
+    await db.users.update_one(
+        {"user_id": user.user_id},
+        {"$set": {"xp": new_xp, "level": new_level}, "$inc": {"coins": score}}
+    )
+    
+    return {"score": score, "xp_gained": xp_gained, "new_level": new_level, "coins_earned": score}
+
+def calculate_score(mode_id: str, game_data: dict, user_answers: dict) -> int:
+    score = 0
+    
+    if mode_id == "quiz_qui_a_dit":
+        for i, quote in enumerate(game_data.get("quotes", [])):
+            if user_answers.get(f"q_{i}") == quote["author"]:
+                score += 1
+    
+    elif mode_id == "quiz_vrai_faux":
+        for i, stmt in enumerate(game_data.get("statements", [])):
+            if user_answers.get(f"q_{i}") == stmt["answer"]:
+                score += 1
+    
+    elif mode_id == "chrono_versets":
+        for i, verse in enumerate(game_data.get("verses", [])):
+            if user_answers.get(f"q_{i}", "").lower() == verse["missing"].lower():
+                score += 1
+    
+    elif mode_id == "anagrammes":
+        for i, anagram in enumerate(game_data.get("anagrams", [])):
+            if user_answers.get(f"q_{i}", "").upper() == anagram["answer"]:
+                score += 1
+    
+    elif mode_id == "memory_biblique":
+        score = user_answers.get("matches", 0)
+    
+    return score
+
 app.include_router(api_router)
 
 app.add_middleware(
@@ -646,3 +873,153 @@ async def seed_initial_data():
         ]
         await db.badges.insert_many(initial_badges)
         logger.info(f"✅ {len(initial_badges)} badges initiaux créés")
+    
+    game_modes_count = await db.game_modes.count_documents({})
+    if game_modes_count == 0:
+        game_modes = [
+            {
+                "mode_id": "quiz_qui_a_dit",
+                "category": "Quiz et Tests",
+                "name": "Qui a dit quoi ?",
+                "description": "Attribuez chaque citation à son auteur biblique",
+                "icon": "💬",
+                "difficulty": "moyen",
+                "duration_minutes": 5,
+                "color": "from-blue-400 to-blue-600",
+                "available": True
+            },
+            {
+                "mode_id": "quiz_vrai_faux",
+                "category": "Quiz et Tests",
+                "name": "Vrai ou Faux",
+                "description": "Affirmations rapides sur les miracles et événements",
+                "icon": "✓✗",
+                "difficulty": "facile",
+                "duration_minutes": 3,
+                "color": "from-green-400 to-emerald-600",
+                "available": True
+            },
+            {
+                "mode_id": "chrono_versets",
+                "category": "Quiz et Tests",
+                "name": "Chrono-Versets",
+                "description": "Complétez un verset le plus vite possible",
+                "icon": "⏱️",
+                "difficulty": "moyen",
+                "duration_minutes": 2,
+                "color": "from-orange-400 to-orange-600",
+                "available": True
+            },
+            {
+                "mode_id": "mots_caches",
+                "category": "Jeux de Mots",
+                "name": "Mots Cachés Bibliques",
+                "description": "Trouvez les noms des livres de la Bible cachés",
+                "icon": "🔤",
+                "difficulty": "facile",
+                "duration_minutes": 5,
+                "color": "from-purple-400 to-purple-600",
+                "available": True
+            },
+            {
+                "mode_id": "anagrammes",
+                "category": "Jeux de Mots",
+                "name": "Anagrammes",
+                "description": "Reconstituez les noms de personnages bibliques",
+                "icon": "🔀",
+                "difficulty": "moyen",
+                "duration_minutes": 3,
+                "color": "from-pink-400 to-pink-600",
+                "available": True
+            },
+            {
+                "mode_id": "la_manne",
+                "category": "Rapidité",
+                "name": "La Manne du Ciel",
+                "description": "Attrapez les bénédictions qui tombent",
+                "icon": "🍞",
+                "difficulty": "facile",
+                "duration_minutes": 2,
+                "color": "from-yellow-400 to-yellow-600",
+                "available": True
+            },
+            {
+                "mode_id": "tri_livres",
+                "category": "Rapidité",
+                "name": "Tri de Livres",
+                "description": "Classez rapidement : Ancien vs Nouveau Testament",
+                "icon": "📚",
+                "difficulty": "facile",
+                "duration_minutes": 3,
+                "color": "from-indigo-400 to-indigo-600",
+                "available": True
+            },
+            {
+                "mode_id": "memory_biblique",
+                "category": "Logique",
+                "name": "Memory Biblique",
+                "description": "Trouvez les paires de symboles chrétiens",
+                "icon": "🎴",
+                "difficulty": "facile",
+                "duration_minutes": 5,
+                "color": "from-teal-400 to-teal-600",
+                "available": True
+            },
+            {
+                "mode_id": "labyrinthe_exode",
+                "category": "Logique",
+                "name": "Labyrinthe de l'Exode",
+                "description": "Guidez le peuple d'Égypte vers la Terre Promise",
+                "icon": "🗺️",
+                "difficulty": "moyen",
+                "duration_minutes": 5,
+                "color": "from-amber-400 to-amber-600",
+                "available": True
+            },
+            {
+                "mode_id": "brebis_perdue",
+                "category": "Défis Flash",
+                "name": "Trouver la Brebis Perdue",
+                "description": "Retrouvez la brebis égarée parmi le troupeau",
+                "icon": "🐑",
+                "difficulty": "facile",
+                "duration_minutes": 1,
+                "color": "from-lime-400 to-lime-600",
+                "available": True
+            },
+            {
+                "mode_id": "multiplier_pains",
+                "category": "Défis Flash",
+                "name": "Multiplier les Pains",
+                "description": "Cliquez vite pour nourrir la foule",
+                "icon": "🍞",
+                "difficulty": "facile",
+                "duration_minutes": 1,
+                "color": "from-rose-400 to-rose-600",
+                "available": True
+            },
+            {
+                "mode_id": "blind_test",
+                "category": "Événements",
+                "name": "Blind Test des Cantiques",
+                "description": "Reconnaissez les hymnes et chants de louange",
+                "icon": "🎵",
+                "difficulty": "moyen",
+                "duration_minutes": 10,
+                "color": "from-cyan-400 to-cyan-600",
+                "available": False
+            },
+            {
+                "mode_id": "voyage_paul",
+                "category": "Aventure",
+                "name": "Le Voyage de Paul",
+                "description": "Suivez les missions de l'apôtre Paul",
+                "icon": "⛵",
+                "difficulty": "difficile",
+                "duration_minutes": 15,
+                "color": "from-violet-400 to-violet-600",
+                "available": False
+            }
+        ]
+        await db.game_modes.insert_many(game_modes)
+        logger.info(f"✅ {len(game_modes)} modes de jeu créés")

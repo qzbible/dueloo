@@ -188,6 +188,29 @@ const Dashboard = () => {
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.3 }}
           >
+            <Card className="p-6 bg-white/10 backdrop-blur-md border-white/20 h-full hover:bg-white/15 transition-all cursor-pointer" onClick={() => navigate('/games')}>
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <h3 className="text-2xl font-bold text-white mb-2" style={{ fontFamily: 'Manrope, sans-serif' }}>
+                    Tous les Modes
+                  </h3>
+                  <p className="text-blue-200">90+ jeux et quiz bibliques</p>
+                </div>
+                <Sparkles className="w-12 h-12 text-yellow-400" />
+              </div>
+              <Button data-testid="all-games-button" className="w-full bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white">
+                Découvrir
+              </Button>
+            </Card>
+          </motion.div>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-6 mb-8">
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.4 }}
+          >
             <Card className="p-6 bg-white/10 backdrop-blur-md border-white/20 h-full hover:bg-white/15 transition-all cursor-pointer" onClick={() => navigate('/premium')}>
               <div className="flex items-start justify-between mb-4">
                 <div>
