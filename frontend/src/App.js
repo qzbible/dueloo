@@ -19,6 +19,8 @@ import DuoLeaderboard from '@/pages/DuoLeaderboard';
 import ModeGroupe from '@/pages/ModeGroupe';
 import Leaderboard from '@/pages/Leaderboard';
 import Achievements from '@/pages/Achievements';
+import Tournaments from '@/pages/Tournaments';
+import { SpectatorList, SpectatorView } from '@/pages/Spectator';
 
 function AppRouter() {
   const location = useLocation();
@@ -42,6 +44,9 @@ function AppRouter() {
       <Route path="/group" element={<ModeGroupe />} />
       <Route path="/leaderboard" element={<Leaderboard />} />
       <Route path="/achievements" element={<Achievements />} />
+      <Route path="/tournaments" element={<Tournaments />} />
+      <Route path="/spectate" element={<SpectatorList />} />
+      <Route path="/spectate/:matchId" element={<SpectatorView />} />
       <Route path="/premium" element={<Premium />} />
       <Route path="/premium-success" element={<PremiumSuccess />} />
       <Route path="*" element={<Navigate to="/" replace />} />

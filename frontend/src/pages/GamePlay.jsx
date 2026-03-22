@@ -17,6 +17,7 @@ import LaManne from '@/components/games/LaManne';
 import TriLivres from '@/components/games/TriLivres';
 import BrebisPerdue from '@/components/games/BrebisPerdue';
 import MultiplierPains from '@/components/games/MultiplierPains';
+import LabyrintheExode from '@/components/games/LabyrintheExode';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -86,7 +87,8 @@ const GamePlay = () => {
       'la_manne': LaManne,
       'tri_livres': TriLivres,
       'brebis_perdue': BrebisPerdue,
-      'multiplier_pains': MultiplierPains
+      'multiplier_pains': MultiplierPains,
+      'labyrinthe_exode': LabyrintheExode
     };
 
     const GameComponent = gameComponents[modeId];

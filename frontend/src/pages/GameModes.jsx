@@ -5,7 +5,7 @@ import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Play, Lock, Clock } from 'lucide-react';
+import { ArrowLeft, Play, Lock, Clock, Trophy, Eye } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -91,6 +91,15 @@ const GameModes = () => {
           <p className="text-lg text-blue-200" style={{ fontFamily: 'Manrope, sans-serif' }}>
             Découvrez plus de 90 façons de vivre la Bible !
           </p>
+          
+          <div className="flex flex-wrap gap-3 mt-6">
+            <Button data-testid="nav-tournaments" onClick={() => navigate('/tournaments')} className="bg-gradient-to-r from-yellow-500 to-orange-600 text-white hover:opacity-90">
+              <Trophy className="w-4 h-4 mr-2" /> Tournois
+            </Button>
+            <Button data-testid="nav-spectator" onClick={() => navigate('/spectate')} className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:opacity-90">
+              <Eye className="w-4 h-4 mr-2" /> Spectateur
+            </Button>
+          </div>
         </motion.div>
 
         <Tabs defaultValue="all" className="mb-8" onValueChange={setSelectedCategory}>

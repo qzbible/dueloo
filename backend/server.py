@@ -631,9 +631,10 @@ async def generate_game_data(mode_id: str):
         return {"verses": verses[:3]}
     
     elif mode_id == "mots_caches":
-        grid_size = 10
-        words = ["GENESE", "EXODE", "JEAN", "MARC", "LUC", "ACTES"]
-        return {"grid_size": grid_size, "words": words, "grid": generate_word_search_grid(words, grid_size)}
+        grid_size = 12
+        words = ["GENESE", "EXODE", "JEAN", "MARC", "LUC", "ACTES", "PAUL", "DAVID"]
+        grid_result = generate_word_search_grid(words, grid_size)
+        return {"grid_size": grid_size, "words": words, "grid": grid_result["grid"], "placements": grid_result["placements"]}
     
     elif mode_id == "anagrammes":
         anagrams = [
@@ -657,30 +658,50 @@ async def generate_game_data(mode_id: str):
         random.shuffle(cards)
         return {"cards": cards}
     
+    elif mode_id == "labyrinthe_exode":
+        maze_data = generate_maze(15, 15)
+        questions = [
+            {"text": "Qui a guidé le peuple hors d'Égypte ?", "options": ["Abraham", "Moïse", "David", "Josué"], "answer": 1},
+            {"text": "Combien de plaies Dieu a-t-il envoyées ?", "options": ["5", "7", "10", "12"], "answer": 2},
+            {"text": "Quelle mer le peuple a-t-il traversée ?", "options": ["Mer Morte", "Mer Rouge", "Mer Méditerranée", "Mer de Galilée"], "answer": 1}
+        ]
+        return {**maze_data, "questions": questions}
+    
     return {}
 
-def generate_word_search_grid(words: List[str], size: int) -> List[List[str]]:
+def generate_word_search_grid(words: List[str], size: int) -> dict:
     import random
     grid = [['' for _ in range(size)] for _ in range(size)]
+    placements = {}
     
     for word in words:
         placed = False
         attempts = 0
-        while not placed and attempts < 50:
-            direction = random.choice(['H', 'V'])
+        while not placed and attempts < 100:
+            direction = random.choice(['H', 'V', 'D'])
             if direction == 'H':
                 row = random.randint(0, size-1)
                 col = random.randint(0, size-len(word))
                 if all(grid[row][col+i] in ('', word[i]) for i in range(len(word))):
                     for i, char in enumerate(word):
                         grid[row][col+i] = char
+                    placements[word] = {"start": [row, col], "direction": "H", "length": len(word)}
                     placed = True
-            else:
+            elif direction == 'V':
                 row = random.randint(0, size-len(word))
                 col = random.randint(0, size-1)
                 if all(grid[row+i][col] in ('', word[i]) for i in range(len(word))):
                     for i, char in enumerate(word):
                         grid[row+i][col] = char
+                    placements[word] = {"start": [row, col], "direction": "V", "length": len(word)}
+                    placed = True
+            else:
+                row = random.randint(0, size-len(word))
+                col = random.randint(0, size-len(word))
+                if all(grid[row+i][col+i] in ('', word[i]) for i in range(len(word))):
+                    for i, char in enumerate(word):
+                        grid[row+i][col+i] = char
+                    placements[word] = {"start": [row, col], "direction": "D", "length": len(word)}
                     placed = True
             attempts += 1
     
@@ -689,7 +710,33 @@ def generate_word_search_grid(words: List[str], size: int) -> List[List[str]]:
             if grid[i][j] == '':
                 grid[i][j] = random.choice('ABCDEFGHIJKLMNOPQRSTUVWXYZ')
     
-    return grid
+    return {"grid": grid, "placements": placements}
+
+def generate_maze(width: int, height: int) -> dict:
+    import random
+    maze = [[1 for _ in range(width)] for _ in range(height)]
+    
+    def carve(x, y):
+        maze[y][x] = 0
+        directions = [(0, -2), (0, 2), (-2, 0), (2, 0)]
+        random.shuffle(directions)
+        for dx, dy in directions:
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < width and 0 <= ny < height and maze[ny][nx] == 1:
+                maze[y + dy // 2][x + dx // 2] = 0
+                carve(nx, ny)
+    
+    carve(1, 1)
+    maze[1][0] = 0
+    maze[height - 2][width - 1] = 0
+    
+    return {
+        "maze": maze,
+        "start": [0, 1],
+        "end": [width - 1, height - 2],
+        "width": width,
+        "height": height
+    }
 
 class GameSubmitRequest(BaseModel):
     session_id: str
@@ -764,6 +811,15 @@ def calculate_score(mode_id: str, game_data: dict, user_answers: dict) -> int:
     
     elif mode_id == "memory_biblique":
         score = user_answers.get("matches", 0)
+    
+    elif mode_id == "mots_caches":
+        score = user_answers.get("words_found", 0)
+    
+    elif mode_id == "labyrinthe_exode":
+        completed = user_answers.get("completed", False)
+        questions_correct = user_answers.get("questions_correct", 0)
+        time_bonus = max(0, user_answers.get("time_bonus", 0))
+        score = (5 if completed else 0) + questions_correct + time_bonus
     
     return score
 
@@ -1395,16 +1451,20 @@ async def get_duo_stats(request: Request, authorization: Optional[str] = Header(
             "rank": None
         }
     
-    total = stats["wins"] + stats["losses"] + stats["draws"]
-    winrate = (stats["wins"] / total * 100) if total > 0 else 0
+    wins = stats.get("wins", 0)
+    losses = stats.get("losses", 0)
+    draws = stats.get("draws", 0)
+    mmr = stats.get("mmr", 1000)
+    total = wins + losses + draws
+    winrate = (wins / total * 100) if total > 0 else 0
     
-    rank = await db.duo_leaderboard.count_documents({"mmr": {"$gt": stats["mmr"]}}) + 1
+    rank = await db.duo_leaderboard.count_documents({"mmr": {"$gt": mmr}}) + 1
     
     return {
-        "mmr": stats["mmr"],
-        "wins": stats["wins"],
-        "losses": stats["losses"],
-        "draws": stats["draws"],
+        "mmr": mmr,
+        "wins": wins,
+        "losses": losses,
+        "draws": draws,
         "winrate": round(winrate, 1),
         "total_matches": total,
         "rank": rank
@@ -1419,8 +1479,11 @@ async def get_duo_leaderboard(limit: int = 100):
         user_doc = await db.users.find_one({"user_id": entry["user_id"]}, {"_id": 0, "name": 1, "picture": 1, "level": 1})
         
         if user_doc:
-            total = entry["wins"] + entry["losses"] + entry["draws"]
-            winrate = (entry["wins"] / total * 100) if total > 0 else 0
+            wins = entry.get("wins", 0)
+            losses = entry.get("losses", 0)
+            draws = entry.get("draws", 0)
+            total = wins + losses + draws
+            winrate = (wins / total * 100) if total > 0 else 0
             
             enriched.append({
                 "rank": idx + 1,
@@ -1428,10 +1491,10 @@ async def get_duo_leaderboard(limit: int = 100):
                 "name": user_doc.get("name", "Inconnu"),
                 "picture": user_doc.get("picture"),
                 "level": user_doc.get("level", 1),
-                "mmr": entry["mmr"],
-                "wins": entry["wins"],
-                "losses": entry["losses"],
-                "draws": entry["draws"],
+                "mmr": entry.get("mmr", 1000),
+                "wins": wins,
+                "losses": losses,
+                "draws": draws,
                 "winrate": round(winrate, 1),
                 "total_matches": total
             })
@@ -1461,17 +1524,25 @@ async def get_duo_match(match_id: str, request: Request, authorization: Optional
     return match
 
 @api_router.post("/tournaments/create")
-async def create_tournament(request: Request, name: str, start_date: str, authorization: Optional[str] = Header(None)):
+async def create_tournament(request: Request, authorization: Optional[str] = Header(None)):
     user = await get_current_user(request, authorization)
+    
+    body = await request.json()
+    name = body.get("name", "Tournoi")
+    start_date = body.get("start_date", (datetime.now(timezone.utc) + timedelta(days=1)).isoformat())
+    max_players = body.get("max_players", 16)
     
     tournament = {
         "tournament_id": f"tour_{uuid.uuid4().hex[:12]}",
         "name": name,
         "organizer_id": user.user_id,
+        "organizer_name": user.name,
         "start_date": start_date,
+        "max_players": max_players,
         "status": "registration",
         "participants": [],
         "brackets": [],
+        "current_round": 0,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
@@ -1494,6 +1565,9 @@ async def register_tournament(tournament_id: str, request: Request, authorizatio
     if any(p["user_id"] == user.user_id for p in tournament["participants"]):
         raise HTTPException(status_code=400, detail="Déjà inscrit")
     
+    if len(tournament["participants"]) >= tournament.get("max_players", 16):
+        raise HTTPException(status_code=400, detail="Tournoi complet")
+    
     await db.tournaments.update_one(
         {"tournament_id": tournament_id},
         {"$push": {"participants": {
@@ -1504,16 +1578,133 @@ async def register_tournament(tournament_id: str, request: Request, authorizatio
         }}}
     )
     
-    return {"message": "Inscription réussie"}
+    return {"message": "Inscription réussie", "participants_count": len(tournament["participants"]) + 1}
 
 @api_router.get("/tournaments/active")
 async def get_active_tournaments():
     tournaments = await db.tournaments.find(
         {"status": {"$in": ["registration", "ongoing"]}},
         {"_id": 0}
-    ).sort("start_date", 1).to_list(10)
+    ).sort("start_date", 1).to_list(20)
     
     return tournaments
+
+@api_router.get("/tournaments/{tournament_id}")
+async def get_tournament_detail(tournament_id: str):
+    tournament = await db.tournaments.find_one({"tournament_id": tournament_id}, {"_id": 0})
+    if not tournament:
+        raise HTTPException(status_code=404, detail="Tournoi non trouvé")
+    return tournament
+
+@api_router.post("/tournaments/{tournament_id}/start")
+async def start_tournament(tournament_id: str, request: Request, authorization: Optional[str] = Header(None)):
+    user = await get_current_user(request, authorization)
+    tournament = await db.tournaments.find_one({"tournament_id": tournament_id}, {"_id": 0})
+    
+    if not tournament:
+        raise HTTPException(status_code=404, detail="Tournoi non trouvé")
+    if tournament["organizer_id"] != user.user_id:
+        raise HTTPException(status_code=403, detail="Seul l'organisateur peut démarrer")
+    if tournament["status"] != "registration":
+        raise HTTPException(status_code=400, detail="Tournoi déjà démarré")
+    if len(tournament["participants"]) < 2:
+        raise HTTPException(status_code=400, detail="Minimum 2 participants")
+    
+    participants = tournament["participants"][:]
+    random.shuffle(participants)
+    
+    if len(participants) % 2 != 0:
+        participants.append({"user_id": "BYE", "name": "BYE", "picture": None})
+    
+    matches = []
+    for i in range(0, len(participants), 2):
+        matches.append({
+            "match_id": f"tm_{uuid.uuid4().hex[:8]}",
+            "round": 1,
+            "player1": participants[i],
+            "player2": participants[i + 1],
+            "winner": participants[i]["user_id"] if participants[i + 1]["user_id"] == "BYE" else None,
+            "player1_score": 0,
+            "player2_score": 0,
+            "status": "completed" if participants[i + 1]["user_id"] == "BYE" else "pending"
+        })
+    
+    await db.tournaments.update_one(
+        {"tournament_id": tournament_id},
+        {"$set": {"status": "ongoing", "brackets": matches, "current_round": 1}}
+    )
+    
+    return {"message": "Tournoi démarré", "round": 1, "matches": len(matches)}
+
+@api_router.post("/tournaments/{tournament_id}/report")
+async def report_match_result(tournament_id: str, request: Request, authorization: Optional[str] = Header(None)):
+    user = await get_current_user(request, authorization)
+    body = await request.json()
+    match_id = body.get("match_id")
+    winner_id = body.get("winner_id")
+    p1_score = body.get("player1_score", 0)
+    p2_score = body.get("player2_score", 0)
+    
+    tournament = await db.tournaments.find_one({"tournament_id": tournament_id}, {"_id": 0})
+    if not tournament:
+        raise HTTPException(status_code=404, detail="Tournoi non trouvé")
+    
+    brackets = tournament["brackets"]
+    updated = False
+    for m in brackets:
+        if m["match_id"] == match_id and m["status"] == "pending":
+            m["winner"] = winner_id
+            m["player1_score"] = p1_score
+            m["player2_score"] = p2_score
+            m["status"] = "completed"
+            updated = True
+            break
+    
+    if not updated:
+        raise HTTPException(status_code=400, detail="Match non trouvé ou déjà terminé")
+    
+    current_round = tournament["current_round"]
+    round_matches = [m for m in brackets if m["round"] == current_round]
+    all_done = all(m["status"] == "completed" for m in round_matches)
+    
+    new_status = tournament["status"]
+    if all_done:
+        winners = []
+        for m in round_matches:
+            w_id = m["winner"]
+            winner_data = m["player1"] if m["player1"]["user_id"] == w_id else m["player2"]
+            winners.append(winner_data)
+        
+        if len(winners) == 1:
+            new_status = "completed"
+            await db.tournaments.update_one(
+                {"tournament_id": tournament_id},
+                {"$set": {"champion": winners[0], "completed_at": datetime.now(timezone.utc).isoformat()}}
+            )
+        else:
+            if len(winners) % 2 != 0:
+                winners.append({"user_id": "BYE", "name": "BYE", "picture": None})
+            
+            new_round = current_round + 1
+            for i in range(0, len(winners), 2):
+                brackets.append({
+                    "match_id": f"tm_{uuid.uuid4().hex[:8]}",
+                    "round": new_round,
+                    "player1": winners[i],
+                    "player2": winners[i + 1],
+                    "winner": winners[i]["user_id"] if winners[i + 1]["user_id"] == "BYE" else None,
+                    "player1_score": 0,
+                    "player2_score": 0,
+                    "status": "completed" if winners[i + 1]["user_id"] == "BYE" else "pending"
+                })
+            current_round = new_round
+    
+    await db.tournaments.update_one(
+        {"tournament_id": tournament_id},
+        {"$set": {"brackets": brackets, "status": new_status, "current_round": current_round}}
+    )
+    
+    return {"message": "Résultat enregistré", "tournament_status": new_status}
 
 @api_router.get("/achievements")
 async def get_achievements(request: Request, authorization: Optional[str] = Header(None)):

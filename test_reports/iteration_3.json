@@ -1,0 +1,77 @@
+{
+  "summary": "Tested new BibleQuest features: Tournament system, Spectator mode, Mots Cachés word search, Labyrinthe maze game. All 14 backend tests pass. Fixed duo/leaderboard and duo/stats KeyError bugs. Frontend pages load correctly with proper navigation.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/duo/leaderboard", "issue": "KeyError 'losses' when leaderboard entries missing fields - FIXED by using .get() with defaults"},
+      {"endpoint": "/api/duo/stats", "issue": "Same KeyError issue - FIXED by using .get() with defaults"}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "GET /api/tournaments/active returns list of tournaments - PASSED",
+    "POST /api/tournaments/create creates tournament (requires auth) - PASSED",
+    "POST /api/tournaments/{id}/register registers user - PASSED",
+    "POST /api/tournaments/{id}/start requires 2+ participants - PASSED",
+    "GET /api/tournaments/{id} returns tournament detail - PASSED",
+    "GET /api/duo/active-matches returns active matches - PASSED",
+    "GET /api/duo/leaderboard works after fix - PASSED",
+    "POST /api/games/start with mode_id=mots_caches returns grid with placements - PASSED",
+    "POST /api/games/start with mode_id=labyrinthe_exode returns maze data - PASSED",
+    "Auth required endpoints return 401 without auth - PASSED",
+    "Frontend /tournaments page loads with create button - PASSED",
+    "Frontend /spectate page loads with empty state - PASSED",
+    "Frontend /games page has Tournois and Spectateur buttons - PASSED",
+    "Frontend Mots Cachés game renders 12x12 interactive grid - PASSED",
+    "Frontend Labyrinthe game renders maze with movement controls - PASSED",
+    "Navigation from /games to /tournaments works - PASSED",
+    "Navigation from /games to /spectate works - PASSED"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_new_features.py",
+    "/app/test_reports/pytest/pytest_results_new_features.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fixed duo/leaderboard endpoint to use .get() with defaults for wins/losses/draws/mmr fields",
+    "Fixed duo/stats endpoint with same pattern to prevent KeyError on incomplete data",
+    "Tournament system correctly handles BYE for odd participants",
+    "Maze generation uses recursive backtracking algorithm",
+    "Word search supports H/V/D directions with proper placement tracking"
+  ],
+  "updated_files": [
+    "/app/backend/server.py (lines 1469-1498 duo/leaderboard fix, lines 1454-1467 duo/stats fix)",
+    "/app/backend/tests/test_new_features.py"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14 tests passed after fix)",
+    "frontend": "100% (all pages load, navigation works, game components render)"
+  },
+  "test_credentials": {
+    "session_token": "test_session_tour_1774204450516",
+    "user_id": "test-user-tour-1774204450516",
+    "is_premium": true
+  },
+  "seed_data_creation": "Created test user with premium status for testing authenticated endpoints. Created 2 test tournaments during testing.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "New features tested: 1) Tournament system with create/register/start/detail endpoints working, 2) Spectator mode with active-matches endpoint, 3) Mots Cachés word search game with 12x12 grid and 8 biblical words, 4) Labyrinthe maze game with 15x15 maze and 3 questions. Fixed duo/leaderboard and duo/stats KeyError bugs by using .get() with defaults. Socket.IO path is /api/socket.io.",
+  "bugs_fixed": [
+    {
+      "endpoint": "/api/duo/leaderboard",
+      "issue": "KeyError: 'losses' when duo_leaderboard entries don't have all fields (wins, losses, draws)",
+      "root_cause": "Code accessed entry['wins'], entry['losses'], entry['draws'] directly without checking if fields exist",
+      "fix": "Changed to use entry.get('wins', 0), entry.get('losses', 0), entry.get('draws', 0), entry.get('mmr', 1000)"
+    },
+    {
+      "endpoint": "/api/duo/stats",
+      "issue": "Same KeyError issue when user's leaderboard entry has incomplete data",
+      "root_cause": "Same pattern - direct dictionary access without defaults",
+      "fix": "Applied same .get() pattern with defaults"
+    }
+  ]
+}
