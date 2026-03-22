@@ -51,7 +51,10 @@ const ModeDuo = () => {
       );
       
       setMatchData(response.data);
-      const userId = response.data.player2_id;
+      
+      const userRes = await axios.get(`${BACKEND_URL}/api/auth/me`, { withCredentials: true });
+      const userId = userRes.data.user_id;
+      
       navigate(`/duo/play/${response.data.match_id}?role=player2&userId=${userId}`);
     } catch (error) {
       console.error('Erreur:', error);

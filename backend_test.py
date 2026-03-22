@@ -7,7 +7,7 @@ from datetime import datetime
 import os
 
 class BibleQuestAPITester:
-    def __init__(self, base_url="https://divine-challenge-2.preview.emergentagent.com"):
+    def __init__(self, base_url="https://biblequest-preview.preview.emergentagent.com"):
         self.base_url = base_url
         self.session_token = None
         self.user_id = None
@@ -267,7 +267,7 @@ print('Test data cleaned up');
             200,
             data={
                 "package_id": "1h",
-                "origin_url": "https://divine-challenge-2.preview.emergentagent.com"
+                "origin_url": "https://biblequest-preview.preview.emergentagent.com"
             }
         )
         

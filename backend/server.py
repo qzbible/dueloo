@@ -412,7 +412,7 @@ async def create_checkout(request: Request, checkout_req: CheckoutRequest, autho
     cancel_url = f"{checkout_req.origin_url}/premium"
     
     host_url = checkout_req.origin_url
-    webhook_url = f"{os.environ.get('REACT_APP_BACKEND_URL', 'https://divine-challenge-2.preview.emergentagent.com')}/api/webhook/stripe"
+    webhook_url = f"{os.environ.get('REACT_APP_BACKEND_URL', 'https://biblequest-preview.preview.emergentagent.com')}/api/webhook/stripe"
     stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
     
     checkout_request = CheckoutSessionRequest(
@@ -463,7 +463,7 @@ async def check_payment_status(session_id: str, request: Request, authorization:
     if transaction["payment_status"] == "paid":
         return {"status": "paid", "message": "Paiement réussi"}
     
-    webhook_url = f"{os.environ.get('REACT_APP_BACKEND_URL', 'https://divine-challenge-2.preview.emergentagent.com')}/api/webhook/stripe"
+    webhook_url = f"{os.environ.get('REACT_APP_BACKEND_URL', 'https://biblequest-preview.preview.emergentagent.com')}/api/webhook/stripe"
     stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
     
     try:
@@ -501,7 +501,7 @@ async def stripe_webhook(request: Request):
     body = await request.body()
     signature = request.headers.get("Stripe-Signature")
     
-    webhook_url = f"{os.environ.get('REACT_APP_BACKEND_URL', 'https://divine-challenge-2.preview.emergentagent.com')}/api/webhook/stripe"
+    webhook_url = f"{os.environ.get('REACT_APP_BACKEND_URL', 'https://biblequest-preview.preview.emergentagent.com')}/api/webhook/stripe"
     stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
     
     try:
