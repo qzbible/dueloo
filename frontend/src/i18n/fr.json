@@ -174,7 +174,10 @@
     "true": "Vrai",
     "false": "Faux",
     "final_ranking": "Classement Final",
-    "back_home": "Retour"
+    "back_home": "Retour",
+    "live_ranking": "Classement en direct",
+    "waiting_answers": "En attente de réponses...",
+    "players_label": "joueurs"
   },
   "polyglot": {
     "title": "Progression Polyglotte",

@@ -174,7 +174,10 @@
     "true": "True",
     "false": "False",
     "final_ranking": "Final Ranking",
-    "back_home": "Back"
+    "back_home": "Back",
+    "live_ranking": "Live Ranking",
+    "waiting_answers": "Waiting for answers...",
+    "players_label": "players"
   },
   "polyglot": {
     "title": "Polyglot Progress",
