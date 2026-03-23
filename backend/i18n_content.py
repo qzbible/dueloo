@@ -83,9 +83,9 @@ def get_quiz_vrai_faux(lang: str = "fr"):
             {"text": "Ezekiel had the vision of the dry bones", "answer": True}
         ]
     }
-    data = content.get(lang, content["fr"])
+    data = list(content.get(lang, content["fr"]))
     random.shuffle(data)
-    return {"statements": data[:6]}
+    return {"statements": data}
 
 
 def get_chrono_versets(lang: str = "fr"):

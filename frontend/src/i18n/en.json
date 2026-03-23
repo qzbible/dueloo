@@ -185,6 +185,7 @@
     "unlocked": "Badge unlocked!",
     "progress": "Progress"
   },
+  "common": {
     "back": "Back",
     "loading": "Loading...",
     "error": "Error",

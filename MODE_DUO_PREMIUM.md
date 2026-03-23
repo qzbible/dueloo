@@ -40,7 +40,7 @@ N'importe quel code (ex: 75001, 10001, etc.)
 ## ✅ Scénario de Test Complet
 
 ### Étape 1 : Créer un compte
-1. Allez sur https://biblequest-preview.preview.emergentagent.com
+1. Allez sur https://biblequest-preview-1.preview.emergentagent.com
 2. Cliquez sur "Commencer l'aventure"
 3. Connectez-vous avec Google (via Emergent Auth)
 

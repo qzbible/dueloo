@@ -17,6 +17,8 @@ import DuoPlay from '@/pages/DuoPlay';
 import DuoHistory from '@/pages/DuoHistory';
 import DuoLeaderboard from '@/pages/DuoLeaderboard';
 import ModeGroupe from '@/pages/ModeGroupe';
+import GroupHost from '@/pages/GroupHost';
+import GroupPlay from '@/pages/GroupPlay';
 import Leaderboard from '@/pages/Leaderboard';
 import Achievements from '@/pages/Achievements';
 import Tournaments from '@/pages/Tournaments';
@@ -42,6 +44,8 @@ function AppRouter() {
       <Route path="/duo/history" element={<DuoHistory />} />
       <Route path="/duo/leaderboard" element={<DuoLeaderboard />} />
       <Route path="/group" element={<ModeGroupe />} />
+      <Route path="/group/host/:sessionId" element={<GroupHost />} />
+      <Route path="/group/play/:sessionId" element={<GroupPlay />} />
       <Route path="/leaderboard" element={<Leaderboard />} />
       <Route path="/achievements" element={<Achievements />} />
       <Route path="/tournaments" element={<Tournaments />} />

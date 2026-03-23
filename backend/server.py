@@ -291,8 +291,10 @@ async def start_group_session(session_id: str, request: Request, authorization: 
     if session["host_id"] != user.user_id:
         raise HTTPException(status_code=403, detail="Seul l'hôte peut démarrer")
     
-    questions = get_quiz_vrai_faux("fr").get("statements", [])[:session.get("num_questions", 10)]
-    await db.group_sessions.update_one({"session_id": session_id}, {"$set": {"started": True, "questions": questions}})
+    all_q = get_quiz_vrai_faux("fr").get("statements", []) + get_quiz_vrai_faux("en").get("statements", [])
+    random.shuffle(all_q)
+    questions = all_q[:session.get("num_questions", 10)]
+    await db.group_sessions.update_one({"session_id": session_id}, {"$set": {"started": True, "questions": questions, "current_question": 0}})
     await sio.emit("group_started", {"session_id": session_id, "total_questions": len(questions)}, room=session_id)
     return {"message": "Session démarrée", "total_questions": len(questions)}
 
@@ -642,7 +644,13 @@ async def group_answer(sid, data):
             {"$inc": {"players.$.score": points}}
         )
         
-        await sio.emit("group_answer_result", {"user_id": user_id, "correct": is_correct, "points": points}, room=session_id)
+        # Send result only to the specific player
+        await sio.emit("group_answer_result", {"user_id": user_id, "correct": is_correct, "points": points}, room=sid)
+        
+        # Broadcast updated leaderboard to everyone in the room
+        updated = await db.group_sessions.find_one({"session_id": session_id}, {"_id": 0})
+        sorted_players = sorted(updated.get("players", []), key=lambda p: p.get("score", 0), reverse=True)
+        await sio.emit("group_leaderboard", {"players": sorted_players}, room=session_id)
 
 # ── Middleware & Config ──────────────────────────────────────────────
 app.include_router(api_router)

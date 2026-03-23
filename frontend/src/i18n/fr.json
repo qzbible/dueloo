@@ -185,6 +185,7 @@
     "unlocked": "Badge débloqué !",
     "progress": "Progression"
   },
+  "common": {
     "back": "Retour",
     "loading": "Chargement...",
     "error": "Erreur",

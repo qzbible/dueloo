@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { io } from 'socket.io-client';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useAuthStore } from '@/stores/authStore';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Trophy, Clock, Check, X } from 'lucide-react';
@@ -14,6 +15,7 @@ const GroupPlay = () => {
   const navigate = useNavigate();
   const { sessionId } = useParams();
   const { t } = useTranslation();
+  const { user } = useAuthStore();
   const socketRef = useRef(null);
   const [question, setQuestion] = useState(null);
   const [answered, setAnswered] = useState(false);
@@ -22,6 +24,8 @@ const GroupPlay = () => {
   const [finished, setFinished] = useState(false);
   const [players, setPlayers] = useState([]);
   const [waiting, setWaiting] = useState(true);
+
+  const myUserId = user?.user_id;
 
   useEffect(() => {
     socketRef.current = io(BACKEND_URL, { path: '/api/socket.io', transports: ['websocket', 'polling'] });
@@ -44,6 +48,10 @@ const GroupPlay = () => {
       if (data.correct) setMyScore(prev => prev + data.points);
     });
 
+    socketRef.current.on('group_leaderboard', (data) => {
+      setPlayers(data.players || []);
+    });
+
     socketRef.current.on('group_finished', (data) => {
       setFinished(true);
       setPlayers(data.players || []);
@@ -53,13 +61,11 @@ const GroupPlay = () => {
   }, [sessionId]);
 
   const submitAnswer = (answer) => {
-    if (answered) return;
+    if (answered || !myUserId) return;
     setAnswered(true);
-    
-    const userId = 'player_' + Math.random().toString(36).slice(2, 8);
     socketRef.current.emit('group_answer', {
       session_id: sessionId,
-      user_id: userId,
+      user_id: myUserId,
       answer: answer,
       question_index: question.question_index
     });
