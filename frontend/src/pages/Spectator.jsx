@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { io } from 'socket.io-client';
+import { useTranslation } from '@/hooks/useTranslation';
+import LanguageSwitcher from '@/components/LanguageSwitcher';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -12,6 +14,7 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 const SpectatorList = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -37,12 +40,12 @@ const SpectatorList = () => {
       </div>
       <div className="relative z-10 container mx-auto px-4 py-8">
         <Button onClick={() => navigate('/games')} variant="outline" className="bg-white/10 border-white/20 text-white hover:bg-white/20 mb-6">
-          <ArrowLeft className="w-4 h-4 mr-2" /> Retour
+          <ArrowLeft className="w-4 h-4 mr-2" /> {t('common.back')}
         </Button>
 
         <div className="text-center mb-10">
-          <h1 className="text-4xl sm:text-5xl font-bold text-white mb-3" style={{ fontFamily: 'Fraunces, serif' }}>Mode Spectateur</h1>
-          <p className="text-lg text-blue-200">Regardez les duels en temps réel</p>
+          <h1 className="text-4xl sm:text-5xl font-bold text-white mb-3" style={{ fontFamily: 'Fraunces, serif' }}>{t('spectator.title')}</h1>
+          <p className="text-lg text-blue-200">{t('spectator.subtitle')}</p>
         </div>
 
         {loading ? (
@@ -50,8 +53,8 @@ const SpectatorList = () => {
         ) : matches.length === 0 ? (
           <div className="text-center text-blue-200 py-12">
             <Eye className="w-16 h-16 mx-auto mb-4 opacity-50" />
-            <p className="text-lg">Aucun match en cours</p>
-            <p className="text-sm mt-2">Les matchs Duo actifs apparaîtront ici</p>
+            <p className="text-lg">{t('spectator.no_matches')}</p>
+            <p className="text-sm mt-2">{t('spectator.matches_appear')}</p>
           </div>
         ) : (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
@@ -59,7 +62,7 @@ const SpectatorList = () => {
               <motion.div key={m.match_id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
                 <Card data-testid={`spectate-match-${m.match_id}`} className="p-6 bg-white/10 backdrop-blur-md border-white/20 cursor-pointer hover:bg-white/15 transition-all" onClick={() => navigate(`/spectate/${m.match_id}`)}>
                   <div className="flex items-center justify-between mb-4">
-                    <span className="text-sm text-emerald-300 flex items-center gap-1"><Eye className="w-3 h-3" /> LIVE</span>
+                    <span className="text-sm text-emerald-300 flex items-center gap-1"><Eye className="w-3 h-3" /> {t('spectator.live')}</span>
                     <span className="text-xs text-blue-300">Q{(m.current_question || 0) + 1}</span>
                   </div>
                   <div className="space-y-3">
@@ -86,6 +89,7 @@ const SpectatorList = () => {
 const SpectatorView = () => {
   const navigate = useNavigate();
   const { matchId } = useParams();
+  const { t } = useTranslation();
   const socketRef = useRef(null);
   const [matchData, setMatchData] = useState(null);
   const [currentQuestion, setCurrentQuestion] = useState(null);
@@ -156,7 +160,7 @@ const SpectatorView = () => {
               <p className="text-3xl font-bold text-white">{finalResult.player2_score}</p>
             </div>
           </div>
-          <Button onClick={() => navigate('/spectate')} className="bg-white/10 border-white/20 text-white hover:bg-white/20">Retour aux matchs</Button>
+          <Button onClick={() => navigate('/spectate')} className="bg-white/10 border-white/20 text-white hover:bg-white/20">{t('spectator.back_matches')}</Button>
         </Card>
       </div>
     );
@@ -169,7 +173,7 @@ const SpectatorView = () => {
           <Button onClick={() => navigate('/spectate')} variant="outline" className="bg-white/10 border-white/20 text-white hover:bg-white/20">
             <ArrowLeft className="w-4 h-4 mr-2" /> Quitter
           </Button>
-          <span className="flex items-center gap-2 text-emerald-300 text-sm font-semibold"><Eye className="w-4 h-4" /> SPECTATEUR</span>
+          <span className="flex items-center gap-2 text-emerald-300 text-sm font-semibold"><Eye className="w-4 h-4" /> {t('spectator.spectating')}</span>
         </div>
 
         <Card className="p-6 bg-white/10 backdrop-blur-md border-white/20 mb-6">
@@ -208,7 +212,7 @@ const SpectatorView = () => {
         {!currentQuestion && gameState === 'watching' && (
           <div className="text-center py-12">
             <div className="w-12 h-12 border-4 border-yellow-400 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-            <p className="text-blue-200">En attente de la prochaine question...</p>
+            <p className="text-blue-200">{t('spectator.waiting_question')}</p>
           </div>
         )}
       </div>

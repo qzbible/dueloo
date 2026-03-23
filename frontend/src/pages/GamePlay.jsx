@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import Confetti from 'react-confetti';
 import axios from 'axios';
+import { useTranslation } from '@/hooks/useTranslation';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ArrowLeft, Trophy } from 'lucide-react';
@@ -24,6 +25,7 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const GamePlay = () => {
   const navigate = useNavigate();
   const { modeId } = useParams();
+  const { t, lang } = useTranslation();
   
   const [loading, setLoading] = useState(true);
   const [gameSession, setGameSession] = useState(null);
@@ -39,7 +41,7 @@ const GamePlay = () => {
     try {
       const response = await axios.post(
         `${BACKEND_URL}/api/games/start`,
-        { mode_id: modeId },
+        { mode_id: modeId, lang },
         { withCredentials: true }
       );
       
@@ -96,9 +98,9 @@ const GamePlay = () => {
     if (!GameComponent) {
       return (
         <div className="text-center py-12">
-          <p className="text-white text-lg">Ce jeu n'est pas encore implémenté</p>
+          <p className="text-white text-lg">{t('games.not_implemented')}</p>
           <Button onClick={() => navigate('/games')} className="mt-4">
-            Retour aux modes
+            {t('games.back_to_modes')}
           </Button>
         </div>
       );
@@ -112,7 +114,7 @@ const GamePlay = () => {
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 to-purple-900">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-yellow-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-white text-lg">Chargement du jeu...</p>
+          <p className="text-white text-lg">{t('games.loading_game')}</p>
         </div>
       </div>
     );
@@ -136,14 +138,14 @@ const GamePlay = () => {
             </div>
             
             <h2 className="text-3xl font-bold text-white mb-4" style={{ fontFamily: 'Fraunces, serif' }}>
-              {result.score >= 3 ? 'Excellent !' : 'Bien joué !'}
+              {result.score >= 3 ? t('games.excellent') : t('games.well_played')}
             </h2>
             
             <div className="mb-8">
               <div data-testid="game-score" className="text-6xl font-bold text-yellow-400 mb-2">
                 {result.score}
               </div>
-              <div className="text-blue-200">Points marqués</div>
+              <div className="text-blue-200">{t('games.points_scored')}</div>
               <div className="text-sm text-blue-300 mt-2">
                 +{result.xp_gained} XP • +{result.coins_earned} 🪙
               </div>
@@ -154,14 +156,14 @@ const GamePlay = () => {
                 onClick={() => window.location.reload()}
                 className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white"
               >
-                Rejouer
+                {t('games.replay')}
               </Button>
               <Button
                 onClick={() => navigate('/games')}
                 variant="outline"
                 className="w-full bg-white/10 backdrop-blur-md border-white/20 text-white hover:bg-white/20"
               >
-                Autres modes
+                {t('games.other_modes')}
               </Button>
             </div>
           </Card>

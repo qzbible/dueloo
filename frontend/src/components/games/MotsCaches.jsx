@@ -2,11 +2,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { useTranslation } from '@/hooks/useTranslation';
 import axios from 'axios';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 const MotsCaches = ({ onSubmit }) => {
+  const { t, lang } = useTranslation();
   const [gameData, setGameData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedCells, setSelectedCells] = useState([]);
@@ -29,7 +31,7 @@ const MotsCaches = ({ onSubmit }) => {
     try {
       const response = await axios.post(
         `${BACKEND_URL}/api/games/start`,
-        { mode_id: 'mots_caches' },
+        { mode_id: 'mots_caches', lang },
         { withCredentials: true }
       );
       setGameData(response.data.game_data);
@@ -92,7 +94,7 @@ const MotsCaches = ({ onSubmit }) => {
   };
 
   if (loading || !gameData) {
-    return <div className="text-center text-white">Chargement de la grille...</div>;
+    return <div className="text-center text-white">{t('mots_caches.loading')}</div>;
   }
 
   const isSelected = (r, c) => selectedCells.some(([sr, sc]) => sr === r && sc === c);
@@ -102,7 +104,7 @@ const MotsCaches = ({ onSubmit }) => {
     <div className="max-w-3xl mx-auto select-none" data-testid="mots-caches-game">
       <div className="mb-6 text-center">
         <span className="text-yellow-400 font-semibold text-lg">
-          Mots trouvés : {foundWords.length}/{gameData.words.length}
+          {t('mots_caches.words_found')} : {foundWords.length}/{gameData.words.length}
         </span>
       </div>
 

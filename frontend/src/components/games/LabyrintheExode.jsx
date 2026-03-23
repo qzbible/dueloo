@@ -2,11 +2,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { useTranslation } from '@/hooks/useTranslation';
 import axios from 'axios';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 const LabyrintheExode = ({ onSubmit }) => {
+  const { t, lang } = useTranslation();
   const [gameData, setGameData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [playerPos, setPlayerPos] = useState(null);
@@ -62,7 +64,7 @@ const LabyrintheExode = ({ onSubmit }) => {
     try {
       const response = await axios.post(
         `${BACKEND_URL}/api/games/start`,
-        { mode_id: 'labyrinthe_exode' },
+        { mode_id: 'labyrinthe_exode', lang },
         { withCredentials: true }
       );
       const data = response.data.game_data;
@@ -105,7 +107,7 @@ const LabyrintheExode = ({ onSubmit }) => {
   };
 
   if (loading || !gameData) {
-    return <div className="text-center text-white">Génération du labyrinthe...</div>;
+    return <div className="text-center text-white">{t('labyrinthe.loading')}</div>;
   }
 
   if (completed) {
@@ -115,10 +117,10 @@ const LabyrintheExode = ({ onSubmit }) => {
         <Card className="p-8 bg-white/10 backdrop-blur-md border-white/20">
           <div className="text-6xl mb-4">{won ? '🏆' : '⏰'}</div>
           <h2 className="text-2xl font-bold text-white mb-2">
-            {won ? 'Terre Promise atteinte !' : 'Temps écoulé !'}
+            {won ? t('labyrinthe.promised_land') : t('labyrinthe.time_up')}
           </h2>
-          <p className="text-blue-200 mb-2">Pas : {steps} | Questions : {questionsCorrect}/{gameData.questions.length}</p>
-          <p className="text-yellow-400 font-bold">Temps restant : {timeLeft}s</p>
+          <p className="text-blue-200 mb-2">{t('labyrinthe.steps')} : {steps} | {t('labyrinthe.questions')} : {questionsCorrect}/{gameData.questions.length}</p>
+          <p className="text-yellow-400 font-bold">{t('labyrinthe.time_left')} : {timeLeft}s</p>
         </Card>
       </div>
     );
@@ -156,7 +158,7 @@ const LabyrintheExode = ({ onSubmit }) => {
   return (
     <div className="max-w-xl mx-auto" data-testid="labyrinthe-game">
       <div className="flex items-center justify-between mb-4">
-        <span className="text-white font-semibold">Pas : {steps}</span>
+        <span className="text-white font-semibold">{t('labyrinthe.steps')} : {steps}</span>
         <span className={`font-bold text-lg ${timeLeft <= 15 ? 'text-red-400 animate-pulse' : 'text-yellow-400'}`}>
           {timeLeft}s
         </span>
@@ -209,7 +211,7 @@ const LabyrintheExode = ({ onSubmit }) => {
       </div>
 
       <p className="text-center text-blue-200 text-sm mt-4">
-        Utilisez les touches fléchées ou les boutons pour vous déplacer
+        {t('labyrinthe.use_arrows')}
       </p>
     </div>
   );

@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import axios from 'axios';
+import { useTranslation } from '@/hooks/useTranslation';
+import LanguageSwitcher from '@/components/LanguageSwitcher';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -11,6 +13,7 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 const GameModes = () => {
   const navigate = useNavigate();
+  const { t, lang } = useTranslation();
   const [gameModes, setGameModes] = useState([]);
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -56,7 +59,7 @@ const GameModes = () => {
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 to-purple-900">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-yellow-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-white text-lg">Chargement des modes...</p>
+          <p className="text-white text-lg">{t('common.loading')}</p>
         </div>
       </div>
     );
@@ -77,7 +80,7 @@ const GameModes = () => {
           className="bg-white/10 backdrop-blur-md border-white/20 text-white hover:bg-white/20 mb-6"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
-          Retour
+          {t('common.back')}
         </Button>
 
         <motion.div
@@ -86,30 +89,31 @@ const GameModes = () => {
           className="mb-8"
         >
           <h1 className="text-4xl sm:text-5xl font-bold text-white mb-3" style={{ fontFamily: 'Fraunces, serif' }}>
-            Modes de Jeu
+            {t('games.title')}
           </h1>
           <p className="text-lg text-blue-200" style={{ fontFamily: 'Manrope, sans-serif' }}>
-            Découvrez plus de 90 façons de vivre la Bible !
+            {t('games.subtitle')}
           </p>
           
           <div className="flex flex-wrap gap-3 mt-6">
             <Button data-testid="nav-tournaments" onClick={() => navigate('/tournaments')} className="bg-gradient-to-r from-yellow-500 to-orange-600 text-white hover:opacity-90">
-              <Trophy className="w-4 h-4 mr-2" /> Tournois
+              <Trophy className="w-4 h-4 mr-2" /> {t('games.tournaments')}
             </Button>
             <Button data-testid="nav-spectator" onClick={() => navigate('/spectate')} className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:opacity-90">
-              <Eye className="w-4 h-4 mr-2" /> Spectateur
+              <Eye className="w-4 h-4 mr-2" /> {t('games.spectator')}
             </Button>
+            <LanguageSwitcher />
           </div>
         </motion.div>
 
         <Tabs defaultValue="all" className="mb-8" onValueChange={setSelectedCategory}>
           <TabsList className="bg-white/10 backdrop-blur-md border border-white/20">
-            <TabsTrigger value="all" className="data-[state=active]:bg-white/20">Tous</TabsTrigger>
-            <TabsTrigger value="Quiz et Tests" className="data-[state=active]:bg-white/20">Quiz</TabsTrigger>
-            <TabsTrigger value="Jeux de Mots" className="data-[state=active]:bg-white/20">Mots</TabsTrigger>
-            <TabsTrigger value="Rapidité" className="data-[state=active]:bg-white/20">Rapidité</TabsTrigger>
-            <TabsTrigger value="Logique" className="data-[state=active]:bg-white/20">Logique</TabsTrigger>
-            <TabsTrigger value="Défis Flash" className="data-[state=active]:bg-white/20">Flash</TabsTrigger>
+            <TabsTrigger value="all" className="data-[state=active]:bg-white/20">{t('games.all')}</TabsTrigger>
+            <TabsTrigger value="Quiz et Tests" className="data-[state=active]:bg-white/20">{t('games.quiz')}</TabsTrigger>
+            <TabsTrigger value="Jeux de Mots" className="data-[state=active]:bg-white/20">{t('games.words')}</TabsTrigger>
+            <TabsTrigger value="Rapidité" className="data-[state=active]:bg-white/20">{t('games.speed')}</TabsTrigger>
+            <TabsTrigger value="Logique" className="data-[state=active]:bg-white/20">{t('games.logic')}</TabsTrigger>
+            <TabsTrigger value="Défis Flash" className="data-[state=active]:bg-white/20">{t('games.flash')}</TabsTrigger>
           </TabsList>
         </Tabs>
 

@@ -7,12 +7,14 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Trophy, Zap, Heart, Clock } from 'lucide-react';
+import { useTranslation } from '@/hooks/useTranslation';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 const DuoPlay = () => {
   const navigate = useNavigate();
   const { matchId } = useParams();
+  const { t } = useTranslation();
   const socketRef = useRef(null);
   
   const [gameState, setGameState] = useState('connecting');
@@ -113,7 +115,7 @@ const DuoPlay = () => {
     });
 
     socketRef.current.on('opponent_disconnected', () => {
-      alert('Adversaire déconnecté');
+      alert(t('duo.disconnected'));
       navigate('/duo');
     });
 
@@ -168,7 +170,7 @@ const DuoPlay = () => {
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 to-purple-900">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-yellow-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-white text-lg">Connexion au match...</p>
+          <p className="text-white text-lg">{t('duo.connecting')}</p>
         </div>
       </div>
     );
@@ -190,7 +192,7 @@ const DuoPlay = () => {
             ⚔️
           </motion.div>
           <h2 className="text-4xl font-bold text-white mb-4">
-            {gameState === 'waiting' ? 'En attente du second joueur...' : 'Les deux joueurs sont prêts !'}
+            {gameState === 'waiting' ? t('duo.waiting_player') : t('duo.both_ready')}
           </h2>
           {gameState === 'both_ready' && (
             <motion.p
@@ -199,7 +201,7 @@ const DuoPlay = () => {
               transition={{ duration: 0.6, repeat: Infinity }}
               className="text-yellow-400 text-2xl font-bold"
             >
-              Le duel commence dans 3...
+              {t('duo.duel_starts')}
             </motion.p>
           )}
         </motion.div>
@@ -233,20 +235,20 @@ const DuoPlay = () => {
                 {iWon ? '🏆' : isDraw ? '🤝' : '😅'}
               </motion.div>
               <h2 className="text-4xl font-bold text-white mb-2" style={{ fontFamily: 'Fraunces, serif' }}>
-                {iWon ? 'Victoire !' : isDraw ? 'Match Nul !' : 'Défaite'}
+                {iWon ? t('duo.victory') : isDraw ? t('duo.draw') : t('duo.defeat')}
               </h2>
               <p className="text-blue-200">
-                {iWon ? 'Félicitations champion !' : isDraw ? 'Vous êtes à égalité !' : 'Réessayez pour la victoire !'}
+                {iWon ? t('duo.victory_msg') : isDraw ? t('duo.draw_msg') : t('duo.defeat_msg')}
               </p>
             </div>
 
             <div className="grid grid-cols-2 gap-6 mb-8">
               <div className="text-center p-4 rounded-lg bg-blue-500/20">
-                <p className="text-blue-200 text-sm mb-1">Votre Score</p>
+                <p className="text-blue-200 text-sm mb-1">{t('duo.your_score')}</p>
                 <p className="text-4xl font-bold text-white">{myFinalScore}</p>
               </div>
               <div className="text-center p-4 rounded-lg bg-purple-500/20">
-                <p className="text-blue-200 text-sm mb-1">Adversaire</p>
+                <p className="text-blue-200 text-sm mb-1">{t('duo.opponent')}</p>
                 <p className="text-4xl font-bold text-white">{opponentFinalScore}</p>
               </div>
             </div>
@@ -256,14 +258,14 @@ const DuoPlay = () => {
                 onClick={requestRematch}
                 className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white text-lg"
               >
-                ⚔️ Revanche !
+                {t('duo.rematch')}
               </Button>
               <Button
                 onClick={() => navigate('/duo')}
                 variant="outline"
                 className="w-full bg-white/10 border-white/20 text-white hover:bg-white/20"
               >
-                Retour au menu
+                {t('duo.back_menu')}
               </Button>
             </div>
           </Card>
@@ -286,7 +288,7 @@ const DuoPlay = () => {
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <Zap className="w-5 h-5 text-blue-400" />
-              <span className="text-white font-semibold">Vous</span>
+              <span className="text-white font-semibold">{t('duo.you')}</span>
             </div>
             <span className="text-yellow-400 font-bold text-lg">{myScore}</span>
           </div>
@@ -295,7 +297,7 @@ const DuoPlay = () => {
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <Trophy className="w-5 h-5 text-purple-400" />
-              <span className="text-white font-semibold">Adversaire</span>
+              <span className="text-white font-semibold">{t('duo.opponent')}</span>
             </div>
             <span className="text-purple-300 font-bold text-lg">{opponentScore}</span>
           </div>
@@ -304,7 +306,7 @@ const DuoPlay = () => {
 
         <div className="flex items-center justify-between mb-6">
           <span className="text-white font-semibold">
-            Question {currentQuestion.question_index + 1}/{currentQuestion.total_questions}
+            {t('duo.question')} {currentQuestion.question_index + 1}/{currentQuestion.total_questions}
           </span>
           <div className={`flex items-center gap-2 text-2xl font-bold ${timeLeft <= 5 ? 'text-red-400 animate-pulse' : 'text-white'}`}>
             <Clock className="w-6 h-6" />
@@ -330,7 +332,7 @@ const DuoPlay = () => {
                   animate={{ opacity: 1 }}
                   className="text-purple-300 text-sm mt-2"
                 >
-                  ⚡ L'adversaire a déjà répondu !
+                  {t('duo.opponent_answered')}
                 </motion.p>
               )}
             </Card>
@@ -368,14 +370,14 @@ const DuoPlay = () => {
                 <Card className="p-6 bg-white/10 backdrop-blur-md border-white/20">
                   <div className="grid grid-cols-2 gap-4">
                     <div className={`p-4 rounded-lg ${roundResult[myRole]?.correct ? 'bg-emerald-500/20' : 'bg-red-500/20'}`}>
-                      <p className="text-sm text-blue-200 mb-1">Votre réponse</p>
+                      <p className="text-sm text-blue-200 mb-1">{t('duo.your_answer')}</p>
                       <p className="text-2xl font-bold text-white">
                         {roundResult[myRole]?.correct ? '✓' : '✗'} +{roundResult[myRole]?.points || 0}
                       </p>
                       <p className="text-xs text-blue-200">Temps: {roundResult[myRole]?.time}s</p>
                     </div>
                     <div className={`p-4 rounded-lg ${roundResult[myRole === 'player1' ? 'player2' : 'player1']?.correct ? 'bg-emerald-500/20' : 'bg-red-500/20'}`}>
-                      <p className="text-sm text-blue-200 mb-1">Adversaire</p>
+                      <p className="text-sm text-blue-200 mb-1">{t('duo.opponent')}</p>
                       <p className="text-2xl font-bold text-white">
                         {roundResult[myRole === 'player1' ? 'player2' : 'player1']?.correct ? '✓' : '✗'} +{roundResult[myRole === 'player1' ? 'player2' : 'player1']?.points || 0}
                       </p>

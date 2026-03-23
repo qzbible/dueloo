@@ -562,6 +562,7 @@ async def get_game_categories():
 
 class GameStartRequest(BaseModel):
     mode_id: str
+    lang: str = "fr"
 
 @api_router.post("/games/start")
 async def start_game(request: Request, game_request: GameStartRequest, authorization: Optional[str] = Header(None)):
@@ -574,7 +575,7 @@ async def start_game(request: Request, game_request: GameStartRequest, authoriza
     if not mode.get("available", False):
         raise HTTPException(status_code=403, detail="Ce mode n'est pas encore disponible")
     
-    game_data = await generate_game_data(game_request.mode_id)
+    game_data = await generate_game_data(game_request.mode_id, game_request.lang)
     
     session_id = f"game_{uuid.uuid4().hex[:12]}"
     game_session = {
@@ -591,60 +592,120 @@ async def start_game(request: Request, game_request: GameStartRequest, authoriza
     
     return {"session_id": session_id, "game_data": game_data, "mode": mode}
 
-async def generate_game_data(mode_id: str):
+async def generate_game_data(mode_id: str, lang: str = "fr"):
+    import random
+    
+    # Multilingual content
+    content = {
+        "quiz_qui_a_dit": {
+            "fr": [
+                {"text": "Je suis le chemin, la vérité et la vie", "author": "Jésus", "options": ["Pierre", "Jésus", "Paul", "Jean"]},
+                {"text": "Me voici, envoie-moi", "author": "Ésaïe", "options": ["Moïse", "David", "Ésaïe", "Jérémie"]},
+                {"text": "L'Éternel est mon berger", "author": "David", "options": ["Salomon", "David", "Samuel", "Élie"]},
+                {"text": "Avant que tu naisses, je t'ai connu", "author": "Dieu", "options": ["Dieu", "Moïse", "Abraham", "Jacob"]},
+                {"text": "Que ton règne vienne", "author": "Jésus", "options": ["Jean", "Pierre", "Jésus", "Matthieu"]}
+            ],
+            "en": [
+                {"text": "I am the way, the truth and the life", "author": "Jesus", "options": ["Peter", "Jesus", "Paul", "John"]},
+                {"text": "Here am I, send me", "author": "Isaiah", "options": ["Moses", "David", "Isaiah", "Jeremiah"]},
+                {"text": "The Lord is my shepherd", "author": "David", "options": ["Solomon", "David", "Samuel", "Elijah"]},
+                {"text": "Before you were born, I knew you", "author": "God", "options": ["God", "Moses", "Abraham", "Jacob"]},
+                {"text": "Your kingdom come", "author": "Jesus", "options": ["John", "Peter", "Jesus", "Matthew"]}
+            ]
+        },
+        "quiz_vrai_faux": {
+            "fr": [
+                {"text": "Jésus a changé l'eau en vin à Cana", "answer": True},
+                {"text": "Moïse a traversé la mer Morte", "answer": False},
+                {"text": "David a vaincu Goliath avec une épée", "answer": False},
+                {"text": "Jonas a été avalé par un grand poisson", "answer": True},
+                {"text": "Marie-Madeleine était l'épouse de Jésus", "answer": False},
+                {"text": "Pierre a marché sur l'eau", "answer": True},
+                {"text": "Abraham avait 100 ans quand Isaac est né", "answer": True},
+                {"text": "Il y a 13 apôtres", "answer": False}
+            ],
+            "en": [
+                {"text": "Jesus turned water into wine at Cana", "answer": True},
+                {"text": "Moses crossed the Dead Sea", "answer": False},
+                {"text": "David defeated Goliath with a sword", "answer": False},
+                {"text": "Jonah was swallowed by a great fish", "answer": True},
+                {"text": "Mary Magdalene was Jesus' wife", "answer": False},
+                {"text": "Peter walked on water", "answer": True},
+                {"text": "Abraham was 100 years old when Isaac was born", "answer": True},
+                {"text": "There were 13 apostles", "answer": False}
+            ]
+        },
+        "chrono_versets": {
+            "fr": [
+                {"text": "Car Dieu a tant aimé le monde qu'il a donné son Fils unique", "missing": "monde", "reference": "Jean 3:16"},
+                {"text": "L'Éternel est mon berger, je ne manquerai de rien", "missing": "berger", "reference": "Psaume 23:1"},
+                {"text": "Je puis tout par celui qui me fortifie", "missing": "fortifie", "reference": "Philippiens 4:13"},
+                {"text": "Demandez et vous recevrez", "missing": "recevrez", "reference": "Matthieu 7:7"}
+            ],
+            "en": [
+                {"text": "For God so loved the world that he gave his only Son", "missing": "world", "reference": "John 3:16"},
+                {"text": "The Lord is my shepherd, I shall not want", "missing": "shepherd", "reference": "Psalm 23:1"},
+                {"text": "I can do all things through him who strengthens me", "missing": "strengthens", "reference": "Philippians 4:13"},
+                {"text": "Ask and you shall receive", "missing": "receive", "reference": "Matthew 7:7"}
+            ]
+        },
+        "labyrinthe_exode": {
+            "fr": [
+                {"text": "Qui a guidé le peuple hors d'Égypte ?", "options": ["Abraham", "Moïse", "David", "Josué"], "answer": 1},
+                {"text": "Combien de plaies Dieu a-t-il envoyées ?", "options": ["5", "7", "10", "12"], "answer": 2},
+                {"text": "Quelle mer le peuple a-t-il traversée ?", "options": ["Mer Morte", "Mer Rouge", "Mer Méditerranée", "Mer de Galilée"], "answer": 1}
+            ],
+            "en": [
+                {"text": "Who led the people out of Egypt?", "options": ["Abraham", "Moses", "David", "Joshua"], "answer": 1},
+                {"text": "How many plagues did God send?", "options": ["5", "7", "10", "12"], "answer": 2},
+                {"text": "Which sea did the people cross?", "options": ["Dead Sea", "Red Sea", "Mediterranean Sea", "Sea of Galilee"], "answer": 1}
+            ]
+        }
+    }
+    
     if mode_id == "quiz_qui_a_dit":
-        quotes = [
-            {"text": "Je suis le chemin, la vérité et la vie", "author": "Jésus", "options": ["Pierre", "Jésus", "Paul", "Jean"]},
-            {"text": "Me voici, envoie-moi", "author": "Ésaïe", "options": ["Moïse", "David", "Ésaïe", "Jérémie"]},
-            {"text": "L'Éternel est mon berger", "author": "David", "options": ["Salomon", "David", "Samuel", "Élie"]},
-            {"text": "Avant que tu naisses, je t'ai connu", "author": "Dieu", "options": ["Dieu", "Moïse", "Abraham", "Jacob"]},
-            {"text": "Que ton règne vienne", "author": "Jésus", "options": ["Jean", "Pierre", "Jésus", "Matthieu"]}
-        ]
-        import random
+        quotes = content["quiz_qui_a_dit"].get(lang, content["quiz_qui_a_dit"]["fr"])
         random.shuffle(quotes)
         return {"quotes": quotes[:5]}
     
     elif mode_id == "quiz_vrai_faux":
-        statements = [
-            {"text": "Jésus a changé l'eau en vin à Cana", "answer": True},
-            {"text": "Moïse a traversé la mer Morte", "answer": False},
-            {"text": "David a vaincu Goliath avec une épée", "answer": False},
-            {"text": "Jonas a été avalé par un grand poisson", "answer": True},
-            {"text": "Marie-Madeleine était l'épouse de Jésus", "answer": False},
-            {"text": "Pierre a marché sur l'eau", "answer": True},
-            {"text": "Abraham avait 100 ans quand Isaac est né", "answer": True},
-            {"text": "Il y a 13 apôtres", "answer": False}
-        ]
-        import random
+        statements = content["quiz_vrai_faux"].get(lang, content["quiz_vrai_faux"]["fr"])
         random.shuffle(statements)
         return {"statements": statements[:6]}
     
     elif mode_id == "chrono_versets":
-        verses = [
-            {"text": "Car Dieu a tant aimé le monde qu'il a donné son Fils unique", "missing": "monde", "reference": "Jean 3:16"},
-            {"text": "L'Éternel est mon berger, je ne manquerai de rien", "missing": "berger", "reference": "Psaume 23:1"},
-            {"text": "Je puis tout par celui qui me fortifie", "missing": "fortifie", "reference": "Philippiens 4:13"},
-            {"text": "Demandez et vous recevrez", "missing": "recevrez", "reference": "Matthieu 7:7"}
-        ]
-        import random
+        verses = content["chrono_versets"].get(lang, content["chrono_versets"]["fr"])
         random.shuffle(verses)
         return {"verses": verses[:3]}
     
     elif mode_id == "mots_caches":
         grid_size = 12
-        words = ["GENESE", "EXODE", "JEAN", "MARC", "LUC", "ACTES", "PAUL", "DAVID"]
+        words_map = {
+            "fr": ["GENESE", "EXODE", "JEAN", "MARC", "LUC", "ACTES", "PAUL", "DAVID"],
+            "en": ["GENESIS", "EXODUS", "JOHN", "MARK", "LUKE", "ACTS", "PAUL", "DAVID"]
+        }
+        words = words_map.get(lang, words_map["fr"])
         grid_result = generate_word_search_grid(words, grid_size)
         return {"grid_size": grid_size, "words": words, "grid": grid_result["grid"], "placements": grid_result["placements"]}
     
     elif mode_id == "anagrammes":
-        anagrams = [
-            {"scrambled": "OSMEI", "answer": "MOISE"},
-            {"scrambled": "VDDAI", "answer": "DAVID"},
-            {"text": "EHERST", "answer": "ESTHER"},
-            {"scrambled": "ULAP", "answer": "PAUL"},
-            {"scrambled": "RREIPE", "answer": "PIERRE"}
-        ]
-        import random
+        anagrams_map = {
+            "fr": [
+                {"scrambled": "OSMEI", "answer": "MOISE"},
+                {"scrambled": "VDDAI", "answer": "DAVID"},
+                {"text": "EHERST", "answer": "ESTHER"},
+                {"scrambled": "ULAP", "answer": "PAUL"},
+                {"scrambled": "RREIPE", "answer": "PIERRE"}
+            ],
+            "en": [
+                {"scrambled": "SEOMS", "answer": "MOSES"},
+                {"scrambled": "VDDAI", "answer": "DAVID"},
+                {"scrambled": "EHERST", "answer": "ESTHER"},
+                {"scrambled": "ULAP", "answer": "PAUL"},
+                {"scrambled": "RETEP", "answer": "PETER"}
+            ]
+        }
+        anagrams = anagrams_map.get(lang, anagrams_map["fr"])
         random.shuffle(anagrams)
         return {"anagrams": anagrams[:4]}
     
@@ -654,17 +715,12 @@ async def generate_game_data(mode_id: str):
         for symbol in symbols:
             cards.append({"id": f"{symbol}_1", "symbol": symbol})
             cards.append({"id": f"{symbol}_2", "symbol": symbol})
-        import random
         random.shuffle(cards)
         return {"cards": cards}
     
     elif mode_id == "labyrinthe_exode":
         maze_data = generate_maze(15, 15)
-        questions = [
-            {"text": "Qui a guidé le peuple hors d'Égypte ?", "options": ["Abraham", "Moïse", "David", "Josué"], "answer": 1},
-            {"text": "Combien de plaies Dieu a-t-il envoyées ?", "options": ["5", "7", "10", "12"], "answer": 2},
-            {"text": "Quelle mer le peuple a-t-il traversée ?", "options": ["Mer Morte", "Mer Rouge", "Mer Méditerranée", "Mer de Galilée"], "answer": 1}
-        ]
+        questions = content["labyrinthe_exode"].get(lang, content["labyrinthe_exode"]["fr"])
         return {**maze_data, "questions": questions}
     
     return {}
