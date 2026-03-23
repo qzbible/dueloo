@@ -27,6 +27,7 @@ from i18n_content import (
 # Import route modules
 from routes.auth_routes import router as auth_router
 from routes.games_routes import router as games_router
+from routes.admin_routes import router as admin_router
 
 # ── App & Socket.IO setup ────────────────────────────────────────────
 sio = socketio.AsyncServer(
@@ -620,7 +621,7 @@ async def send_emoji(sid, data):
 @sio.event
 async def join_group_room(sid, data):
     session_id = data.get("session_id")
-    sio.enter_room(sid, session_id)
+    await sio.enter_room(sid, session_id)
     await sio.emit("joined_group", {"session_id": session_id}, room=sid)
 
 @sio.event
@@ -654,6 +655,7 @@ async def group_answer(sid, data):
 
 # ── Middleware & Config ──────────────────────────────────────────────
 app.include_router(api_router)
+app.include_router(admin_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,

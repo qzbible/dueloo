@@ -8,7 +8,7 @@ import LanguageSwitcher from '@/components/LanguageSwitcher';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { Sparkles, Trophy, Heart, Coins, Crown, BookOpen, Award, Zap, LogOut } from 'lucide-react';
+import { Sparkles, Trophy, Heart, Coins, Crown, BookOpen, Award, Zap, LogOut, Shield } from 'lucide-react';
 import DailyMannaModal from '@/components/DailyMannaModal';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -74,6 +74,11 @@ const Dashboard = () => {
           <motion.h1 initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="text-4xl font-bold text-white" style={{ fontFamily: 'Fraunces, serif' }}>BibleQuest</motion.h1>
           <div className="flex items-center gap-3">
             <LanguageSwitcher />
+            {user?.is_admin && (
+              <Button data-testid="admin-panel-btn" onClick={() => navigate('/admin')} variant="outline" className="bg-yellow-400/10 border-yellow-400/30 text-yellow-400 hover:bg-yellow-400/20">
+                <Shield className="w-4 h-4 mr-2" />Admin
+              </Button>
+            )}
             <Button data-testid="logout-button" onClick={handleLogout} variant="outline" className="bg-white/10 backdrop-blur-md border-white/20 text-white hover:bg-white/20">
               <LogOut className="w-4 h-4 mr-2" />{t('dashboard.logout')}
             </Button>

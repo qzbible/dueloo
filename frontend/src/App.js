@@ -23,6 +23,7 @@ import Leaderboard from '@/pages/Leaderboard';
 import Achievements from '@/pages/Achievements';
 import Tournaments from '@/pages/Tournaments';
 import { SpectatorList, SpectatorView } from '@/pages/Spectator';
+import Admin from '@/pages/Admin';
 
 function AppRouter() {
   const location = useLocation();
@@ -53,6 +54,7 @@ function AppRouter() {
       <Route path="/spectate/:matchId" element={<SpectatorView />} />
       <Route path="/premium" element={<Premium />} />
       <Route path="/premium-success" element={<PremiumSuccess />} />
+      <Route path="/admin" element={<Admin />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

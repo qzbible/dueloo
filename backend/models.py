@@ -18,6 +18,7 @@ class User(BaseModel):
     premium_expires_at: Optional[Any] = None
     mmr: int = 1000
     created_at: Any = ""
+    is_admin: bool = False
 
 
 class UserSession(BaseModel):
@@ -119,3 +120,36 @@ class CreateGroupSessionRequest(BaseModel):
 class JoinGroupRequest(BaseModel):
     pin_code: str
     player_name: str
+
+
+class AdminQuestion(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    question_id: str = ""
+    category: str
+    lang: str
+    text: str
+    answer: Any
+    options: Optional[List[str]] = None
+    reference: Optional[str] = None
+    approved: bool = False
+    created_at: str = ""
+    source: str = "ai"
+
+
+class GenerateQuestionsRequest(BaseModel):
+    category: str
+    lang: str = "both"
+    num_questions: int = 5
+    topic: Optional[str] = None
+
+
+class SaveQuestionRequest(BaseModel):
+    question_id: Optional[str] = None
+    category: str
+    lang: str
+    text: str
+    answer: Any
+    options: Optional[List[str]] = None
+    reference: Optional[str] = None
+    approved: bool = True
+    source: str = "ai"

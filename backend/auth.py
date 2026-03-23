@@ -1,6 +1,7 @@
 from fastapi import Request, Header, HTTPException
 from typing import Optional
 from datetime import datetime, timezone
+import os
 from database import db
 from models import User
 
@@ -34,8 +35,19 @@ async def get_current_user(request: Request, authorization: Optional[str] = Head
         raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
     
     if isinstance(user_doc.get('created_at'), str):
-        pass  # already string, fine
+        pass
     if isinstance(user_doc.get('premium_expires_at'), str):
-        pass  # already string, fine
+        pass
     
     return User(**user_doc)
+
+
+async def get_admin_user(request: Request, authorization: Optional[str] = Header(None)) -> User:
+    user = await get_current_user(request, authorization)
+    admin_emails_raw = os.environ.get("ADMIN_EMAILS", "")
+    admin_emails = [e.strip().lower() for e in admin_emails_raw.split(",") if e.strip()]
+    
+    is_admin = user.is_admin or (user.email.lower() in admin_emails if admin_emails else False)
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="Accès admin requis")
+    return user
