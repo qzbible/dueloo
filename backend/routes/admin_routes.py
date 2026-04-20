@@ -13,7 +13,7 @@ from models import GenerateQuestionsRequest, SaveQuestionRequest
 
 load_dotenv()
 
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+# from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -185,13 +185,14 @@ async def generate_questions(
         prompt_template = PROMPTS[category][lang]
         prompt = prompt_template.format(n=gen_req.num_questions, topic=topic)
 
-        chat = LlmChat(
-            api_key=api_key,
-            session_id=f"admin_gen_{uuid.uuid4().hex[:8]}",
-            system_message="Tu es un expert en Bible qui génère des questions pédagogiques de haute qualité.",
-        ).with_model("openai", "gpt-4o")
+        # chat = LlmChat(
+        #     api_key=api_key,
+        #     session_id=f"admin_gen_{uuid.uuid4().hex[:8]}",
+        #     system_message="Tu es un expert en Bible qui génère des questions pédagogiques de haute qualité.",
+        # ).with_model("openai", "gpt-4o")
 
-        response = await chat.send_message(UserMessage(text=prompt))
+        # response = await chat.send_message(UserMessage(text=prompt))
+        response = {}
 
         try:
             items = _parse_json_response(response)

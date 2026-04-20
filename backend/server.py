@@ -37,14 +37,14 @@ sio = socketio.AsyncServer(
     engineio_logger=False
 )
 
-app = FastAPI()
-socket_app = socketio.ASGIApp(sio, app, socketio_path='api/socket.io')
+fastapi_app = FastAPI()
+socket_app = socketio.ASGIApp(sio, fastapi_app, socketio_path='api/socket.io')
 
 api_router = __import__('fastapi', fromlist=['APIRouter']).APIRouter(prefix="/api")
 
 # ── Include modular route files ──────────────────────────────────────
-app.include_router(auth_router)
-app.include_router(games_router)
+fastapi_app.include_router(auth_router)
+fastapi_app.include_router(games_router)
 
 # ── Badges & Achievements ───────────────────────────────────────────
 @api_router.get("/badges")
@@ -162,17 +162,18 @@ async def duo_matchmaking(request: Request, match_req: DuoMatchRequest, authoriz
     user = await get_current_user(request, authorization)
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     
-    if not user.is_premium:
-        quota = await db.duo_quotas.find_one({"user_id": user.user_id, "date": today}, {"_id": 0})
-        if quota and quota.get("count", 0) >= 3:
-            raise HTTPException(status_code=403, detail="Quota atteint. Passez Premium!")
+    # Quota désactivé pour les tests
+    # if not user.is_premium:
+    #     quota = await db.duo_quotas.find_one({"user_id": user.user_id, "date": today}, {"_id": 0})
+    #     if quota and quota.get("count", 0) >= 3:
+    #         raise HTTPException(status_code=403, detail="Quota atteint. Passez Premium!")
     
     if match_req.friend_code:
         match = await db.duo_matches.find_one({"friend_code": match_req.friend_code, "status": "waiting"}, {"_id": 0})
         if match:
             match_id = match["match_id"]
             await db.duo_matches.update_one({"match_id": match_id}, {"$set": {"player2_id": user.user_id, "player2_name": user.name, "player2_picture": user.picture, "status": "ready"}})
-            return {"match_id": match_id, "role": "player2", "status": "ready", "user_id": user.user_id}
+            return {"match_id": match_id, "role": "player2", "status": "ready", "user_id": user.user_id, "mode_id": match.get("mode_id")}
         else:
             raise HTTPException(status_code=404, detail="Match non trouvé")
     
@@ -180,6 +181,7 @@ async def duo_matchmaking(request: Request, match_req: DuoMatchRequest, authoriz
     match = {
         "match_id": f"duo_{uuid.uuid4().hex[:12]}",
         "friend_code": friend_code,
+        "mode_id": match_req.mode_id,
         "player1_id": user.user_id, "player1_name": user.name, "player1_picture": user.picture, "player1_score": 0, "player1_answers": [],
         "player2_id": None, "player2_name": None, "player2_picture": None, "player2_score": 0, "player2_answers": [],
         "status": "waiting", "current_question": 0, "questions": [],
@@ -187,10 +189,36 @@ async def duo_matchmaking(request: Request, match_req: DuoMatchRequest, authoriz
     }
     await db.duo_matches.insert_one(match)
     
-    if not user.is_premium:
-        await db.duo_quotas.update_one({"user_id": user.user_id, "date": today}, {"$inc": {"count": 1}, "$setOnInsert": {"date": today}}, upsert=True)
+    # if not user.is_premium:
+    #     await db.duo_quotas.update_one({"user_id": user.user_id, "date": today}, {"$inc": {"count": 1}, "$setOnInsert": {"date": today}}, upsert=True)
     
     return {"match_id": match["match_id"], "friend_code": friend_code, "role": "player1", "status": "waiting", "user_id": user.user_id}
+
+@api_router.get("/duo/match/{match_id}")
+async def get_match_status(match_id: str, request: Request, authorization: Optional[str] = Header(None)):
+    user = await get_current_user(request, authorization)
+    match = await db.duo_matches.find_one({"match_id": match_id}, {"_id": 0})
+    if not match:
+        raise HTTPException(status_code=404, detail="Match non trouvé")
+    
+    # Check if user is part of the match
+    role = None
+    if user.user_id == match.get("player1_id"):
+        role = "player1"
+    elif user.user_id == match.get("player2_id"):
+        role = "player2"
+    
+    if not role:
+        raise HTTPException(status_code=403, detail="Vous ne faites pas partie de ce match")
+        
+    return {
+        "match_id": match_id,
+        "role": role,
+        "status": match.get("status"),
+        "mode_id": match.get("mode_id"),
+        "user_id": user.user_id,
+        "current_state": match # Full state for recovery
+    }
 
 # ── Duo Static Routes (BEFORE dynamic) ──────────────────────────────
 @api_router.get("/duo/history")
@@ -508,11 +536,28 @@ async def join_duo_room(sid, data):
     user_id = data.get("user_id")
     role = data.get("role", "player")
     
-    sio.enter_room(sid, match_id)
+    await sio.enter_room(sid, match_id)
     duo_rooms.setdefault(match_id, {})[sid] = {"user_id": user_id, "role": role}
     
     await sio.emit("joined_room", {"match_id": match_id, "user_id": user_id, "role": role}, room=sid)
     
+    players = [v for v in duo_rooms.get(match_id, {}).values() if v["role"] != "spectator"]
+    if len(players) >= 2:
+        await sio.emit("both_ready", {"match_id": match_id}, room=match_id)
+
+@sio.event
+async def rejoin_duo_room(sid, data):
+    match_id = data.get("match_id")
+    user_id = data.get("user_id")
+    role = data.get("role")
+    
+    await sio.enter_room(sid, match_id)
+    duo_rooms.setdefault(match_id, {})[sid] = {"user_id": user_id, "role": role}
+    
+    print(f"User {user_id} rejoined room {match_id} as {role}")
+    await sio.emit("player_rejoined", {"role": role, "user_id": user_id}, room=match_id, skip_sid=sid)
+    
+    # Trigger both_ready to re-sync state for the returning player
     players = [v for v in duo_rooms.get(match_id, {}).values() if v["role"] != "spectator"]
     if len(players) >= 2:
         await sio.emit("both_ready", {"match_id": match_id}, room=match_id)
@@ -617,6 +662,56 @@ async def send_emoji(sid, data):
     match_id = data.get("match_id")
     await sio.emit("receive_reaction", data, room=match_id)
 
+@sio.event
+async def game_move(sid, data):
+    match_id = data.get("match_id")
+    await sio.emit("opponent_move", data, room=match_id, skip_sid=sid)
+
+# WebRTC Signaling
+@sio.event
+async def webrtc_offer(sid, data):
+    match_id = data.get("match_id")
+    await sio.emit("webrtc_offer", data, room=match_id, skip_sid=sid)
+
+@sio.event
+async def webrtc_answer(sid, data):
+    match_id = data.get("match_id")
+    await sio.emit("webrtc_answer", data, room=match_id, skip_sid=sid)
+
+@sio.event
+async def webrtc_ice_candidate(sid, data):
+    match_id = data.get("match_id")
+    await sio.emit("webrtc_ice_candidate", data, room=match_id, skip_sid=sid)
+
+@sio.event
+async def webrtc_ready(sid, data):
+    match_id = data.get("match_id")
+    user_id = data.get("user_id")
+    
+    room_data = duo_rooms.get(match_id, {})
+    
+    # Auto-register the sid if it joined the room but wasn't tracked yet
+    if sid not in room_data:
+        match = await db.duo_matches.find_one({"match_id": match_id}, {"_id": 0})
+        if match:
+            if user_id == match.get("player1_id"):
+                role = "player1"
+            elif user_id == match.get("player2_id"):
+                role = "player2"
+            else:
+                return # Not part of this match
+            duo_rooms.setdefault(match_id, {})[sid] = {"user_id": user_id, "role": role}
+            await sio.enter_room(sid, match_id)
+            room_data = duo_rooms[match_id]
+    
+    if sid in room_data:
+        room_data[sid]["webrtc_ready"] = True
+    
+    ready_players = [v for v in room_data.values() if v.get("webrtc_ready")]
+    print(f"WebRTC ready: {len(ready_players)}/2 players ready in {match_id}")
+    if len(ready_players) >= 2:
+        await sio.emit("start_webrtc", {"match_id": match_id}, room=match_id)
+
 # Group Socket.IO events
 @sio.event
 async def join_group_room(sid, data):
@@ -654,10 +749,10 @@ async def group_answer(sid, data):
         await sio.emit("group_leaderboard", {"players": sorted_players}, room=session_id)
 
 # ── Middleware & Config ──────────────────────────────────────────────
-app.include_router(api_router)
-app.include_router(admin_router, prefix="/api")
+fastapi_app.include_router(api_router)
+fastapi_app.include_router(admin_router, prefix="/api")
 
-app.add_middleware(
+fastapi_app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
     allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
@@ -668,11 +763,11 @@ app.add_middleware(
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-@app.on_event("shutdown")
+@fastapi_app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
 
-@app.on_event("startup")
+@fastapi_app.on_event("startup")
 async def seed_initial_data():
     # Seed questions
     if await db.questions.count_documents({}) == 0:
@@ -705,20 +800,55 @@ async def seed_initial_data():
     # Seed game modes
     if await db.game_modes.count_documents({}) == 0:
         game_modes = [
+            # Quiz et Tests
             {"mode_id": "quiz_qui_a_dit", "category": "Quiz et Tests", "name": "Qui a dit quoi ?", "description": "Attribuez chaque citation à son auteur biblique", "icon": "💬", "difficulty": "moyen", "duration_minutes": 5, "color": "from-blue-400 to-blue-600", "available": True},
             {"mode_id": "quiz_vrai_faux", "category": "Quiz et Tests", "name": "Vrai ou Faux", "description": "Affirmations rapides sur les miracles et événements", "icon": "✓✗", "difficulty": "facile", "duration_minutes": 3, "color": "from-green-400 to-emerald-600", "available": True},
             {"mode_id": "chrono_versets", "category": "Quiz et Tests", "name": "Chrono-Versets", "description": "Complétez un verset le plus vite possible", "icon": "⏱️", "difficulty": "moyen", "duration_minutes": 2, "color": "from-orange-400 to-orange-600", "available": True},
+            
+            # Jeux de Mots
             {"mode_id": "mots_caches", "category": "Jeux de Mots", "name": "Mots Cachés Bibliques", "description": "Trouvez les noms cachés", "icon": "🔤", "difficulty": "facile", "duration_minutes": 5, "color": "from-purple-400 to-purple-600", "available": True},
             {"mode_id": "anagrammes", "category": "Jeux de Mots", "name": "Anagrammes", "description": "Reconstituez les noms bibliques", "icon": "🔀", "difficulty": "moyen", "duration_minutes": 3, "color": "from-pink-400 to-pink-600", "available": True},
+            
+            # Strategie et Plateau
+            {"mode_id": "echecs", "category": "Strategie et Plateau", "name": "Échecs", "description": "Le roi des jeux de stratégie - Contrôle et tactique", "icon": "♟️", "difficulty": "difficile", "duration_minutes": 20, "color": "from-slate-700 to-slate-900", "available": False},
+            {"mode_id": "damier", "category": "Strategie et Plateau", "name": "Damier", "description": "Forcez les captures et créez des chaînes de prises", "icon": "⬛", "difficulty": "moyen", "duration_minutes": 15, "color": "from-gray-600 to-gray-800", "available": False},
+            {"mode_id": "puissance4", "category": "Strategie et Plateau", "name": "Puissance 4", "description": "Alignez 4 jetons avant votre adversaire", "icon": "🔴", "difficulty": "facile", "duration_minutes": 5, "color": "from-red-400 to-red-600", "available": False},
+            {"mode_id": "morpion", "category": "Strategie et Plateau", "name": "Morpion", "description": "Le classique indémodable du 3x3", "icon": "❌", "difficulty": "facile", "duration_minutes": 2, "color": "from-blue-500 to-blue-700", "available": False},
+            {"mode_id": "othello", "category": "Strategie et Plateau", "name": "Othello", "description": "Une minute pour apprendre, une vie pour maîtriser", "icon": "⚫", "difficulty": "moyen", "duration_minutes": 10, "color": "from-emerald-700 to-emerald-900", "available": False},
+            {"mode_id": "go", "category": "Strategie et Plateau", "name": "Go", "description": "Contrôlez le territoire dans ce jeu ancestral", "icon": "⚪", "difficulty": "très difficile", "duration_minutes": 30, "color": "from-zinc-400 to-zinc-600", "available": False},
+            {"mode_id": "awale", "category": "Strategie et Plateau", "name": "Awalé", "description": "Le jeu de semailles africain", "icon": "🟤", "difficulty": "moyen", "duration_minutes": 10, "color": "from-orange-700 to-amber-900", "available": False},
+            {"mode_id": "fanorona", "category": "Strategie et Plateau", "name": "Fanorona", "description": "Stratégie malgache de captures multiples", "icon": "🔶", "difficulty": "difficile", "duration_minutes": 15, "color": "from-orange-400 to-orange-600", "available": False},
+            {"mode_id": "zamma", "category": "Strategie et Plateau", "name": "Zamma", "description": "Variante sahélienne intense du damier", "icon": "🔷", "difficulty": "difficile", "duration_minutes": 20, "color": "from-blue-400 to-blue-600", "available": False},
+
+            # Cartes
+            {"mode_id": "uno", "category": "Cartes", "name": "UNO", "description": "Débarrassez-vous de vos cartes au bon moment", "icon": "🎴", "difficulty": "facile", "duration_minutes": 10, "color": "from-red-500 via-yellow-500 to-green-500", "available": False},
+            {"mode_id": "belote", "category": "Cartes", "name": "Belote / Coinche", "description": "Jeu de plis en équipe - Stratégie et atouts", "icon": "🂡", "difficulty": "difficile", "duration_minutes": 15, "color": "from-blue-600 to-indigo-800", "available": False},
+            {"mode_id": "poker", "category": "Cartes", "name": "Poker", "description": "Bluff, probabilités et psychologie", "icon": "♠️", "difficulty": "difficile", "duration_minutes": 20, "color": "from-gray-800 to-black", "available": False},
+            {"mode_id": "bataille", "category": "Cartes", "name": "Bataille", "description": "Le duel de cartes le plus simple", "icon": "🃏", "difficulty": "facile", "duration_minutes": 5, "color": "from-red-700 to-red-900", "available": False},
+            {"mode_id": "rami", "category": "Cartes", "name": "Rami", "description": "Formez des suites et des brelans", "icon": "🧩", "difficulty": "moyen", "duration_minutes": 15, "color": "from-cyan-600 to-cyan-800", "available": False},
+
+            # Arcade et Action
+            {"mode_id": "snake", "category": "Arcade et Action", "name": "Snake", "description": "Mangez et devenez le plus long possible", "icon": "🐍", "difficulty": "facile", "duration_minutes": 5, "color": "from-green-500 to-green-700", "available": False},
+            {"mode_id": "agario", "category": "Arcade et Action", "name": "Agar.io-like", "description": "Mangez les plus petits, fuyez les plus gros", "icon": "⚪", "difficulty": "moyen", "duration_minutes": 5, "color": "from-purple-500 to-indigo-600", "available": False},
+            {"mode_id": "course", "category": "Arcade et Action", "name": "Course", "description": "Trajectoire optimale sur piste 2D", "icon": "🏎️", "difficulty": "moyen", "duration_minutes": 3, "color": "from-red-500 to-orange-600", "available": False},
+            {"mode_id": "football", "category": "Arcade et Action", "name": "Football 2D", "description": "Marquez contre l'adversaire", "icon": "⚽", "difficulty": "facile", "duration_minutes": 5, "color": "from-green-400 to-emerald-600", "available": False},
+            {"mode_id": "combat", "category": "Arcade et Action", "name": "Combat", "description": "Timing et réflexes en duel", "icon": "🥊", "difficulty": "moyen", "duration_minutes": 3, "color": "from-zinc-500 to-zinc-700", "available": False},
+            {"mode_id": "tower_defense", "category": "Arcade et Action", "name": "Tower Defense", "description": "Protégez votre château contre les vagues", "icon": " castle", "difficulty": "difficile", "duration_minutes": 15, "color": "from-amber-600 to-amber-800", "available": False},
+
+            # Éducatif
+            {"mode_id": "skribbl", "category": "Éducatif", "name": "Skribbl-like", "description": "Dessinez et devinez les mots bibliques", "icon": "🎨", "difficulty": "facile", "duration_minutes": 10, "color": "from-yellow-400 to-orange-500", "available": False},
+            {"mode_id": "memory_biblique", "category": "Éducatif", "name": "Memory Biblique", "description": "Trouvez les paires de symboles", "icon": "🧠", "difficulty": "facile", "duration_minutes": 5, "color": "from-teal-400 to-teal-600", "available": True},
+            
+            # Legacy / Special
             {"mode_id": "la_manne", "category": "Rapidité", "name": "La Manne du Ciel", "description": "Attrapez les bénédictions", "icon": "🍞", "difficulty": "facile", "duration_minutes": 2, "color": "from-yellow-400 to-yellow-600", "available": True},
             {"mode_id": "tri_livres", "category": "Rapidité", "name": "Tri de Livres", "description": "Classez: Ancien vs Nouveau Testament", "icon": "📚", "difficulty": "facile", "duration_minutes": 3, "color": "from-indigo-400 to-indigo-600", "available": True},
-            {"mode_id": "memory_biblique", "category": "Logique", "name": "Memory Biblique", "description": "Trouvez les paires de symboles", "icon": "🎴", "difficulty": "facile", "duration_minutes": 5, "color": "from-teal-400 to-teal-600", "available": True},
             {"mode_id": "labyrinthe_exode", "category": "Logique", "name": "Labyrinthe de l'Exode", "description": "Guidez le peuple vers la Terre Promise", "icon": "🗺️", "difficulty": "moyen", "duration_minutes": 5, "color": "from-amber-400 to-amber-600", "available": True},
             {"mode_id": "brebis_perdue", "category": "Défis Flash", "name": "Trouver la Brebis", "description": "Retrouvez la brebis égarée", "icon": "🐑", "difficulty": "facile", "duration_minutes": 1, "color": "from-lime-400 to-lime-600", "available": True},
             {"mode_id": "multiplier_pains", "category": "Défis Flash", "name": "Multiplier les Pains", "description": "Cliquez vite pour nourrir la foule", "icon": "🍞", "difficulty": "facile", "duration_minutes": 1, "color": "from-rose-400 to-rose-600", "available": True},
-            {"mode_id": "blind_test", "category": "Événements", "name": "Blind Test des Cantiques", "description": "Reconnaissez les hymnes", "icon": "🎵", "difficulty": "moyen", "duration_minutes": 10, "color": "from-cyan-400 to-cyan-600", "available": False},
-            {"mode_id": "voyage_paul", "category": "Aventure", "name": "Le Voyage de Paul", "description": "Suivez les missions de l'apôtre Paul", "icon": "⛵", "difficulty": "difficile", "duration_minutes": 15, "color": "from-violet-400 to-violet-600", "available": False}
+            {"mode_id": "blind_test", "category": "Éducatif", "name": "Blind Test des Cantiques", "description": "Reconnaissez les hymnes", "icon": "🎵", "difficulty": "moyen", "duration_minutes": 10, "color": "from-cyan-400 to-cyan-600", "available": False},
+            {"mode_id": "voyage_paul", "category": "Arcade et Action", "name": "Le Voyage de Paul", "description": "Suivez les missions de l'apôtre Paul", "icon": "⛵", "difficulty": "difficile", "duration_minutes": 15, "color": "from-violet-400 to-violet-600", "available": False}
         ]
+
         await db.game_modes.insert_many(game_modes)
         logger.info(f"Seeded {len(game_modes)} game modes")
     

@@ -11,6 +11,7 @@ import QuizGame from '@/pages/QuizGame';
 import Premium from '@/pages/Premium';
 import PremiumSuccess from '@/pages/PremiumSuccess';
 import GameModes from '@/pages/GameModes';
+import GameConfig from '@/pages/GameConfig';
 import GamePlay from '@/pages/GamePlay';
 import ModeDuo from '@/pages/ModeDuo';
 import DuoPlay from '@/pages/DuoPlay';
@@ -39,6 +40,7 @@ function AppRouter() {
       <Route path="/campaign" element={<Campaign />} />
       <Route path="/quiz" element={<QuizGame />} />
       <Route path="/games" element={<GameModes />} />
+      <Route path="/config/:modeId" element={<GameConfig />} />
       <Route path="/play/:modeId" element={<GamePlay />} />
       <Route path="/duo" element={<ModeDuo />} />
       <Route path="/duo/play/:matchId" element={<DuoPlay />} />

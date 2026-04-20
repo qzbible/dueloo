@@ -58,6 +58,13 @@ let webpackConfig = {
       return webpackConfig;
     },
   },
+  jest: {
+    configure: {
+      moduleNameMapper: {
+        '^@/(.*)$': '<rootDir>/src/$1',
+      },
+    },
+  },
 };
 
 webpackConfig.devServer = (devServerConfig) => {

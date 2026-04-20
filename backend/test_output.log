@@ -1,0 +1,157 @@
+INFO:database:Connecting to MongoDB at localhost:27017/?authSource=admin
+INFO:database:Database handle for 'game' initialized.
+DEBUG CONFTEST: Injected mock_db into database
+DEBUG CONFTEST: Injected mock_client into database
+DEBUG CONFTEST: Injected mock_db into auth
+DEBUG CONFTEST: Injected mock_db into routes.games_routes
+DEBUG CONFTEST: Injected mock_db into server
+DEBUG CONFTEST: Injected mock_client into server
+DEBUG CONFTEST: Injected mock_db into routes.auth_routes
+============================= test session starts ==============================
+platform darwin -- Python 3.13.7, pytest-9.0.2, pluggy-1.6.0 -- /Users/dikonguesamuel/Documents/game immersio/game/BibleQuest/backend/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/dikonguesamuel/Documents/game immersio/game/BibleQuest/backend
+plugins: anyio-4.12.1, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 3 items
+
+tests/test_game_sessions.py::test_create_and_recover_session INFO:httpx:HTTP Request: POST http://test/api/games/start "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://test/api/games/session/game_9d303699223f "HTTP/1.1 401 Unauthorized"
+DEBUG MOCK_AUTH: authorization='Bearer test-token-123'
+DEBUG MOCK_AUTH: headers={'host': 'test', 'accept': '*/*', 'accept-encoding': 'gzip, deflate', 'connection': 'keep-alive', 'user-agent': 'python-httpx/0.28.1', 'authorization': 'Bearer test-token-123', 'content-length': '67', 'content-type': 'application/json'}
+DEBUG MOCK_AUTH: extracted token='test-token-123'
+DEBUG MOCK_AUTH: authorization='None'
+DEBUG MOCK_AUTH: headers={'host': 'test', 'accept': '*/*', 'accept-encoding': 'gzip, deflate', 'connection': 'keep-alive', 'user-agent': 'python-httpx/0.28.1'}
+DEBUG MOCK_AUTH: extracted token='None'
+FAILED
+tests/test_game_sessions.py::test_recover_invalid_session INFO:httpx:HTTP Request: GET http://test/api/games/session/non-existent-id "HTTP/1.1 401 Unauthorized"
+DEBUG MOCK_AUTH: authorization='None'
+DEBUG MOCK_AUTH: headers={'host': 'test', 'accept': '*/*', 'accept-encoding': 'gzip, deflate', 'connection': 'keep-alive', 'user-agent': 'python-httpx/0.28.1'}
+DEBUG MOCK_AUTH: extracted token='None'
+FAILED
+tests/test_game_sessions.py::test_session_contains_required_fields INFO:httpx:HTTP Request: POST http://test/api/games/start "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://test/api/games/session/game_9b4d14e9d472 "HTTP/1.1 401 Unauthorized"
+DEBUG MOCK_AUTH: authorization='Bearer test-token-123'
+DEBUG MOCK_AUTH: headers={'host': 'test', 'accept': '*/*', 'accept-encoding': 'gzip, deflate', 'connection': 'keep-alive', 'user-agent': 'python-httpx/0.28.1', 'authorization': 'Bearer test-token-123', 'content-length': '31', 'content-type': 'application/json'}
+DEBUG MOCK_AUTH: extracted token='test-token-123'
+DEBUG MOCK_AUTH: authorization='None'
+DEBUG MOCK_AUTH: headers={'host': 'test', 'accept': '*/*', 'accept-encoding': 'gzip, deflate', 'connection': 'keep-alive', 'user-agent': 'python-httpx/0.28.1'}
+DEBUG MOCK_AUTH: extracted token='None'
+FAILED
+
+=================================== FAILURES ===================================
+_______________________ test_create_and_recover_session ________________________
+
+ac = <httpx.AsyncClient object at 0x106198ec0>
+mock_database = <motor.motor_asyncio.AsyncIOMotorDatabase object at 0x1043fc6e0>
+test_user = {'token': 'test-token-123', 'user_id': 'test-user-123'}
+
+    @pytest.mark.anyio
+    async def test_create_and_recover_session(ac: AsyncClient, mock_database, test_user):
+        """Test the complete flow of starting a game and recovering its session."""
+    
+        # 1. Start a game
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        start_payload = {
+            "mode_id": "quiz_qui_a_dit",
+            "lang": "fr",
+            "config": {"opponent": "ai"}
+        }
+    
+        response = await ac.post("/api/games/start", json=start_payload, headers=headers)
+        assert response.status_code == 200
+        data = response.json()
+        session_id = data["session_id"]
+        game_data = data["game_data"]
+    
+        # 2. Recover the session
+        recovery_response = await ac.get(f"/api/games/session/{session_id}")
+>       assert recovery_response.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+tests/test_game_sessions.py:25: AssertionError
+------------------------------ Captured log call -------------------------------
+INFO     httpx:_client.py:1740 HTTP Request: POST http://test/api/games/start "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1740 HTTP Request: GET http://test/api/games/session/game_9d303699223f "HTTP/1.1 401 Unauthorized"
+_________________________ test_recover_invalid_session _________________________
+
+ac = <httpx.AsyncClient object at 0x10619e850>
+
+    @pytest.mark.anyio
+    async def test_recover_invalid_session(ac: AsyncClient):
+        """Test recovery of a non-existent session."""
+        response = await ac.get(f"/api/games/session/non-existent-id")
+>       assert response.status_code == 404
+E       assert 401 == 404
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+tests/test_game_sessions.py:37: AssertionError
+------------------------------ Captured log call -------------------------------
+INFO     httpx:_client.py:1740 HTTP Request: GET http://test/api/games/session/non-existent-id "HTTP/1.1 401 Unauthorized"
+____________________ test_session_contains_required_fields _____________________
+
+ac = <httpx.AsyncClient object at 0x106204a50>
+mock_database = <motor.motor_asyncio.AsyncIOMotorDatabase object at 0x1043fc6e0>
+test_user = {'token': 'test-token-123', 'user_id': 'test-user-123'}
+
+    @pytest.mark.anyio
+    async def test_session_contains_required_fields(ac: AsyncClient, mock_database, test_user):
+        """Ensure the session recovery returns enough data for frontend to reconstruct state."""
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        start_payload = {"mode_id": "chess", "lang": "fr"}
+    
+        res = await ac.post("/api/games/start", json=start_payload, headers=headers)
+        session_id = res.json()["session_id"]
+    
+        res_rec = await ac.get(f"/api/games/session/{session_id}")
+        data = res_rec.json()
+    
+>       assert "session_id" in data
+E       AssertionError: assert 'session_id' in {'detail': 'Non authentifi\xe9'}
+
+tests/test_game_sessions.py:52: AssertionError
+------------------------------ Captured log call -------------------------------
+INFO     httpx:_client.py:1740 HTTP Request: POST http://test/api/games/start "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1740 HTTP Request: GET http://test/api/games/session/game_9b4d14e9d472 "HTTP/1.1 401 Unauthorized"
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/starlette/formparsers.py:12
+  /Users/dikonguesamuel/Documents/game immersio/game/BibleQuest/backend/.venv/lib/python3.13/site-packages/starlette/formparsers.py:12: PendingDeprecationWarning: Please use `import python_multipart` instead.
+    import multipart
+
+server.py:766
+  /Users/dikonguesamuel/Documents/game immersio/game/BibleQuest/backend/server.py:766: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @fastapi_app.on_event("shutdown")
+
+.venv/lib/python3.13/site-packages/fastapi/applications.py:4495
+.venv/lib/python3.13/site-packages/fastapi/applications.py:4495
+  /Users/dikonguesamuel/Documents/game immersio/game/BibleQuest/backend/.venv/lib/python3.13/site-packages/fastapi/applications.py:4495: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+server.py:770
+  /Users/dikonguesamuel/Documents/game immersio/game/BibleQuest/backend/server.py:770: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @fastapi_app.on_event("startup")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_game_sessions.py::test_create_and_recover_session - assert 401 == 200
+ +  where 401 = <Response [401 Unauthorized]>.status_code
+FAILED tests/test_game_sessions.py::test_recover_invalid_session - assert 401 == 404
+ +  where 401 = <Response [401 Unauthorized]>.status_code
+FAILED tests/test_game_sessions.py::test_session_contains_required_fields - AssertionError: assert 'session_id' in {'detail': 'Non authentifi\xe9'}
+======================== 3 failed, 5 warnings in 0.43s =========================

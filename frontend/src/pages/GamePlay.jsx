@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import React, { useEffect, useState, useRef } from 'react';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import Confetti from 'react-confetti';
 import axios from 'axios';
+import { io } from 'socket.io-client';
 import { useTranslation } from '@/hooks/useTranslation';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -19,40 +20,233 @@ import TriLivres from '@/components/games/TriLivres';
 import BrebisPerdue from '@/components/games/BrebisPerdue';
 import MultiplierPains from '@/components/games/MultiplierPains';
 import LabyrintheExode from '@/components/games/LabyrintheExode';
+import TicTacToe from '@/components/games/TicTacToe';
+import Connect4 from '@/components/games/Connect4';
+import Snake from '@/components/games/Snake';
+import Checkers from '@/components/games/Checkers';
+import Othello from '@/components/games/Othello';
+import Mancala from '@/components/games/Mancala';
+import Chess from '@/components/games/Chess';
+import UNO from '@/components/games/UNO';
+import Poker from '@/components/games/Poker';
+import Go from '@/components/games/Go';
+import Agario from '@/components/games/Agario';
+import Skribbl from '@/components/games/Skribbl';
+import Bataille from '@/components/games/Bataille';
+import Belote from '@/components/games/Belote';
+import Rami from '@/components/games/Rami';
+import Course from '@/components/games/Course';
+import Football from '@/components/games/Football';
+import Combat from '@/components/games/Combat';
+import TowerDefense from '@/components/games/TowerDefense';
+import BlindTest from '@/components/games/BlindTest';
+import QueSuisJe from '@/components/games/QueSuisJe';
+import Fanorona from '@/components/games/Fanorona';
+import Zamma from '@/components/games/Zamma';
+import VoiceChat from '@/components/VoiceChat';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 const GamePlay = () => {
   const navigate = useNavigate();
   const { modeId } = useParams();
+  const { state } = useLocation();
   const { t, lang } = useTranslation();
+  const socketRef = useRef(null);
   
   const [loading, setLoading] = useState(true);
   const [gameSession, setGameSession] = useState(null);
   const [gameMode, setGameMode] = useState(null);
   const [result, setResult] = useState(null);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [duelMode, setDuelMode] = useState(null); // { matchId, role, userId }
+  const [opponentMove, setOpponentMove] = useState(null);
+  const [bothReady, setBothReady] = useState(false);
+  const [voiceChatKey, setVoiceChatKey] = useState(0);
 
   useEffect(() => {
-    startGame();
+    initGame();
+
+    const handleRestart = () => {
+      console.log("Forcing WebRTC Restart...");
+      setVoiceChatKey(prev => prev + 1);
+    };
+    window.addEventListener('force_webrtc_restart', handleRestart);
+    return () => window.removeEventListener('force_webrtc_restart', handleRestart);
   }, [modeId]);
 
-  const startGame = async () => {
+  const initGame = async () => {
+    const queryParams = new URLSearchParams(window.location.search);
+    const joinCode = queryParams.get('code');
+    const urlMatchId = queryParams.get('match'); // Optional URL param for recovery
+
     try {
-      const response = await axios.post(
-        `${BACKEND_URL}/api/games/start`,
-        { mode_id: modeId, lang },
-        { withCredentials: true }
-      );
+      if (joinCode) {
+        // Auto-join from friend link
+        const response = await axios.post(`${BACKEND_URL}/api/duo/matchmaking`, { 
+          mode: 'friend', 
+          friend_code: joinCode 
+        }, { withCredentials: true });
+        
+        const dData = { 
+          matchId: response.data.match_id, 
+          role: response.data.role, 
+          userId: response.data.user_id 
+        };
+        // Update URL to include match ID for refresh recovery
+        const newUrl = window.location.pathname + `?match=${dData.matchId}`;
+        window.history.replaceState({ ...state, duelData: dData }, '', newUrl);
+
+        saveDuelSession(dData);
+        setDuelMode(dData);
+        setupSocket(dData);
+        startGame(dData);
+      } else {
+        // Try recovery from URL, State or LocalStorage
+        let dData = state?.duelData;
+        
+        if (!dData && urlMatchId) {
+          // Recovery from URL match param
+          const response = await axios.get(`${BACKEND_URL}/api/duo/match/${urlMatchId}`, { withCredentials: true });
+          dData = {
+            matchId: response.data.match_id,
+            role: response.data.role,
+            userId: response.data.user_id
+          };
+        }
+
+        if (!dData) {
+           const saved = localStorage.getItem('active_duel');
+           if (saved) {
+             const parsed = JSON.parse(saved);
+             // Ensure it's for this specific match if URL has it
+             if (!urlMatchId || urlMatchId === parsed.matchId) {
+                dData = parsed;
+             }
+           }
+        }
+
+        if (dData) {
+          saveDuelSession(dData);
+          setDuelMode(dData);
+          setupSocket(dData, true);
+          
+          // Try to resume existing session if we have a sessionId saved
+          const savedSession = dData.sessionId;
+          if (savedSession) {
+            try {
+              const sessionRes = await axios.get(`${BACKEND_URL}/api/games/session/${savedSession}`, { withCredentials: true });
+              console.log("Resuming existing session:", savedSession);
+              setGameSession(savedSession);
+              setDuelMode(prev => prev ? { ...prev, gameData: sessionRes.data.game_data } : dData);
+              setLoading(false);
+              return;
+            } catch (e) {
+              console.log("Session expired, starting new game.");
+            }
+          }
+          
+          // Fetch full match state and start game with recovered context
+          try {
+            const matchRes = await axios.get(`${BACKEND_URL}/api/duo/match/${dData.matchId}`, { withCredentials: true });
+            startGame(dData, matchRes.data.current_state);
+          } catch (e) {
+            startGame(dData);
+          }
+        } else {
+          startGame();
+        }
+      }
+    } catch (e) {
+      console.error("Initialization error:", e);
+      startGame();
+    }
+  };
+
+  const saveDuelSession = (dData, sessionId = null) => {
+    if (dData) {
+      const payload = { ...dData };
+      if (sessionId) payload.sessionId = sessionId;
+      localStorage.setItem('active_duel', JSON.stringify(payload));
+    }
+  };
+
+  const setupSocket = (dData, isRejoining = false) => {
+    socketRef.current = io(BACKEND_URL, {
+      path: '/api/socket.io',
+      transports: ['websocket', 'polling']
+    });
+
+    socketRef.current.on('connect', () => {
+      console.log(`Socket connected correctly. Mode: ${isRejoining ? 'REJOIN' : 'JOIN'}`);
+      const event = isRejoining ? 'rejoin_duo_room' : 'join_duo_room';
+      socketRef.current.emit(event, {
+        match_id: dData.matchId,
+        user_id: dData.userId,
+        role: dData.role
+      });
+    });
+
+    socketRef.current.on('opponent_move', (data) => {
+      setOpponentMove(data);
+    });
+
+    socketRef.current.on('both_ready', () => {
+      setBothReady(true);
+    });
+
+    socketRef.current.on('player_rejoined', (data) => {
+      console.log(`Opponent rejoined: ${data.role}`);
+      setVoiceChatKey(prev => prev + 1);
+    });
+  };
+
+  const onPlayerMove = (moveData) => {
+    if (duelMode && socketRef.current) {
+        socketRef.current.emit('game_move', { match_id: duelMode.matchId, ...moveData });
+    }
+  };
+
+  const startGame = async (dData = null, recovered = null) => {
+    try {
+      const [sessionRes, modeRes] = await Promise.all([
+        axios.post(
+          `${BACKEND_URL}/api/games/start`,
+          { 
+            mode_id: modeId, 
+            lang,
+            config: state?.config || (dData ? { opponent: 'human' } : {}),
+          },
+          { withCredentials: true }
+        ),
+        db_get_mode(modeId) // fetch mode metadata for display
+      ]);
       
-      setGameSession(response.data.session_id);
-      setGameMode(response.data.mode);
+      setGameSession(sessionRes.data.session_id);
+      saveDuelSession(dData, sessionRes.data.session_id);
+
+      if (dData) {
+        setDuelMode(prev => ({ ...prev, gameData: sessionRes.data.game_data }));
+      }
+
+      if (recovered) {
+        setDuelMode(prev => ({ ...prev, recovered }));
+      }
+
+      setGameMode(modeRes);
       setLoading(false);
     } catch (error) {
       console.error('Erreur démarrage jeu:', error);
       alert('Erreur lors du démarrage du jeu');
       navigate('/games');
     }
+  };
+
+  const db_get_mode = async (mid) => {
+    try {
+      const res = await axios.get(`${BACKEND_URL}/api/game-modes`, { withCredentials: true });
+      return res.data.find(m => m.mode_id === mid) || null;
+    } catch { return null; }
   };
 
   const handleSubmit = async (answers) => {
@@ -67,6 +261,7 @@ const GamePlay = () => {
       );
       
       setResult(response.data);
+      localStorage.removeItem('active_duel');
       
       if (response.data.score >= 3) {
         setShowConfetti(true);
@@ -90,7 +285,30 @@ const GamePlay = () => {
       'tri_livres': TriLivres,
       'brebis_perdue': BrebisPerdue,
       'multiplier_pains': MultiplierPains,
-      'labyrinthe_exode': LabyrintheExode
+      'labyrinthe_exode': LabyrintheExode,
+      'morpion': TicTacToe,
+      'puissance4': Connect4,
+      'snake': Snake,
+      'damier': Checkers,
+      'othello': Othello,
+      'awale': Mancala,
+      'echecs': Chess,
+      'uno': UNO,
+      'poker': Poker,
+      'go': Go,
+      'agario': Agario,
+      'skribbl': Skribbl,
+      'bataille': Bataille,
+      'belote': Belote,
+      'rami': Rami,
+      'course': Course,
+      'football': Football,
+      'combat': Combat,
+      'tower_defense': TowerDefense,
+      'blind_test': BlindTest,
+      'que_suis_je': QueSuisJe,
+      'fanorona': Fanorona,
+      'zamma': Zamma
     };
 
     const GameComponent = gameComponents[modeId];
@@ -106,7 +324,16 @@ const GamePlay = () => {
       );
     }
 
-    return <GameComponent onSubmit={handleSubmit} />;
+    return (
+      <GameComponent 
+        onSubmit={handleSubmit} 
+        duelMode={duelMode}
+        gameData={duelMode?.gameData || gameMode?.game_data}
+        opponentMove={opponentMove}
+        onMove={onPlayerMove}
+        bothReady={bothReady}
+      />
+    );
   };
 
   if (loading) {
@@ -188,6 +415,18 @@ const GamePlay = () => {
           <ArrowLeft className="w-4 h-4 mr-2" />
           Quitter
         </Button>
+
+        {duelMode && socketRef.current && (
+          <div className="flex justify-center mb-6">
+            <VoiceChat 
+              key={voiceChatKey}
+              socket={socketRef.current} 
+              matchId={duelMode.matchId} 
+              role={duelMode.role} 
+              userId={duelMode.userId}
+            />
+          </div>
+        )}
 
         {gameMode && (
           <div className="mb-6 text-center">

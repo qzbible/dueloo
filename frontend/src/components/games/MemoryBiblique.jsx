@@ -5,16 +5,34 @@ import axios from 'axios';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
-const MemoryBiblique = ({ onSubmit }) => {
+const MemoryBiblique = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
   const [gameData, setGameData] = useState(null);
   const [flippedCards, setFlippedCards] = useState([]);
   const [matchedCards, setMatchedCards] = useState([]);
   const [loading, setLoading] = useState(true);
   const [moves, setMoves] = useState(0);
+  const [opponentMatchedCount, setOpponentMatchedCount] = useState(0);
 
   useEffect(() => {
-    fetchGameData();
-  }, []);
+    if (duelMode) {
+      if (bothReady && duelMode.role === 'player1') {
+        fetchGameData();
+      }
+    } else {
+      fetchGameData();
+    }
+  }, [bothReady]);
+
+  useEffect(() => {
+    if (duelMode && opponentMove) {
+      if (opponentMove.type === 'init' && duelMode.role === 'player2') {
+        setGameData(opponentMove.gameData);
+        setLoading(false);
+      } else if (opponentMove.type === 'match') {
+        setOpponentMatchedCount(opponentMove.count);
+      }
+    }
+  }, [opponentMove]);
 
   useEffect(() => {
     if (flippedCards.length === 2) {
@@ -38,6 +56,9 @@ const MemoryBiblique = ({ onSubmit }) => {
         { withCredentials: true }
       );
       setGameData(response.data.game_data);
+      if (duelMode && duelMode.role === 'player1') {
+        onMove({ type: 'init', gameData: response.data.game_data });
+      }
     } catch (error) {
       console.error('Erreur:', error);
     } finally {
@@ -59,7 +80,9 @@ const MemoryBiblique = ({ onSubmit }) => {
     const card2 = gameData.cards[second];
 
     if (card1.symbol === card2.symbol) {
-      setMatchedCards([...matchedCards, first, second]);
+      const newMatched = [...matchedCards, first, second];
+      setMatchedCards(newMatched);
+      if (duelMode) onMove({ type: 'match', count: newMatched.length / 2 });
       setFlippedCards([]);
     } else {
       setTimeout(() => {
@@ -77,6 +100,7 @@ const MemoryBiblique = ({ onSubmit }) => {
       <div className="mb-6 text-center">
         <span className="text-yellow-400 font-semibold text-lg">
           Coups : {moves} | Paires trouvées : {matchedCards.length / 2}/8
+          {duelMode && <span className="ml-8 text-emerald-400">Adversaire : {opponentMatchedCount}/8</span>}
         </span>
       </div>
 

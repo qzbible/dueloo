@@ -1,0 +1,101 @@
+INFO:database:Connecting to MongoDB at localhost:27017/?authSource=admin
+INFO:database:Database handle for 'game' initialized.
+DEBUG CONFTEST: Injected mock_db into database
+DEBUG CONFTEST: Injected mock_client into database
+DEBUG CONFTEST: Injected mock_db into auth
+DEBUG CONFTEST: Injected mock_db into routes.games_routes
+DEBUG CONFTEST: Injected mock_db into server
+DEBUG CONFTEST: Injected mock_client into server
+DEBUG CONFTEST: Injected mock_db into routes.auth_routes
+============================= test session starts ==============================
+platform darwin -- Python 3.13.7, pytest-9.0.2, pluggy-1.6.0 -- /Users/dikonguesamuel/Documents/game immersio/game/BibleQuest/backend/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/dikonguesamuel/Documents/game immersio/game/BibleQuest/backend
+plugins: anyio-4.12.1, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 2 items
+
+tests/test_matchmaking.py::test_matchmaking_flow INFO:httpx:HTTP Request: POST http://test/api/duo/matchmaking "HTTP/1.1 401 Unauthorized"
+FAILED
+tests/test_matchmaking.py::test_matchmaking_invalid_code INFO:httpx:HTTP Request: POST http://test/api/duo/matchmaking "HTTP/1.1 401 Unauthorized"
+FAILED
+
+=================================== FAILURES ===================================
+____________________________ test_matchmaking_flow _____________________________
+
+ac = <httpx.AsyncClient object at 0x104f78ec0>
+mock_database = <motor.motor_asyncio.AsyncIOMotorDatabase object at 0x1031d46e0>
+test_user = {'token': 'test-token-123', 'user_id': 'test-user-123'}
+test_user2 = {'token': 'test-token-456', 'user_id': 'test-user-456'}
+
+    @pytest.mark.anyio
+    async def test_matchmaking_flow(ac: AsyncClient, mock_database, test_user, test_user2):
+        """Test the complete flow of creating a match and another player joining."""
+    
+        # 1. Player 1 starts matchmaking
+        headers1 = {"Authorization": f"Bearer {test_user['token']}"}
+        resp1 = await ac.post("/api/duo/matchmaking", json={"mode_id": "chess"}, headers=headers1)
+>       assert resp1.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+tests/test_matchmaking.py:37: AssertionError
+------------------------------ Captured log call -------------------------------
+INFO     httpx:_client.py:1740 HTTP Request: POST http://test/api/duo/matchmaking "HTTP/1.1 401 Unauthorized"
+________________________ test_matchmaking_invalid_code _________________________
+
+ac = <httpx.AsyncClient object at 0x104f85f90>
+test_user = {'token': 'test-token-123', 'user_id': 'test-user-123'}
+
+    @pytest.mark.anyio
+    async def test_matchmaking_invalid_code(ac: AsyncClient, test_user):
+        """Test joining with an invalid friend code."""
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        resp = await ac.post("/api/duo/matchmaking", json={"friend_code": "INVALID"}, headers=headers)
+>       assert resp.status_code == 404
+E       assert 401 == 404
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+tests/test_matchmaking.py:63: AssertionError
+------------------------------ Captured log call -------------------------------
+INFO     httpx:_client.py:1740 HTTP Request: POST http://test/api/duo/matchmaking "HTTP/1.1 401 Unauthorized"
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/starlette/formparsers.py:12
+  /Users/dikonguesamuel/Documents/game immersio/game/BibleQuest/backend/.venv/lib/python3.13/site-packages/starlette/formparsers.py:12: PendingDeprecationWarning: Please use `import python_multipart` instead.
+    import multipart
+
+server.py:766
+  /Users/dikonguesamuel/Documents/game immersio/game/BibleQuest/backend/server.py:766: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @fastapi_app.on_event("shutdown")
+
+.venv/lib/python3.13/site-packages/fastapi/applications.py:4495
+.venv/lib/python3.13/site-packages/fastapi/applications.py:4495
+  /Users/dikonguesamuel/Documents/game immersio/game/BibleQuest/backend/.venv/lib/python3.13/site-packages/fastapi/applications.py:4495: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+server.py:770
+  /Users/dikonguesamuel/Documents/game immersio/game/BibleQuest/backend/server.py:770: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @fastapi_app.on_event("startup")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_matchmaking.py::test_matchmaking_flow - assert 401 == 200
+ +  where 401 = <Response [401 Unauthorized]>.status_code
+FAILED tests/test_matchmaking.py::test_matchmaking_invalid_code - assert 401 == 404
+ +  where 401 = <Response [401 Unauthorized]>.status_code
+======================== 2 failed, 5 warnings in 0.19s =========================

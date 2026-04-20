@@ -64,7 +64,8 @@ async def start_game(request: Request, game_request: GameStartRequest, authoriza
         "game_data": game_data,
         "started_at": datetime.now(timezone.utc).isoformat(),
         "completed": False,
-        "lang": game_request.lang
+        "lang": game_request.lang,
+        "config": game_request.config
     }
     await db.game_sessions.insert_one(session)
     return {"session_id": session["session_id"], "game_data": game_data}
@@ -96,7 +97,34 @@ async def generate_game_data(mode_id: str, lang: str = "fr"):
         maze_data = generate_maze(15, 15)
         questions = get_labyrinthe_questions(lang)
         return {**maze_data, "questions": questions}
+    elif mode_id == "skribbl":
+        words = ["Arche", "Temple", "Croix", "Baleine", "Lion", "Pain", "Poisson", "Colombe", "Buisson", "Harpe"]
+        return {"words": words}
+    elif mode_id == "blind_test":
+        songs = [
+            {"id": 1, "title": "Grâce Infinie", "artist": "Traditionnel"},
+            {"id": 2, "title": "Plus près de toi mon Dieu", "artist": "Traditionnel"},
+            {"id": 3, "title": "Grand Dieu nous te bénissons", "artist": "Traditionnel"}
+        ]
+        return {"songs": songs}
     return {}
+
+
+@router.get("/games/session/{session_id}")
+async def get_game_session(session_id: str, request: Request, authorization: Optional[str] = Header(None)):
+    user = await get_current_user(request, authorization)
+    session = await db.game_sessions.find_one(
+        {"session_id": session_id, "user_id": user.user_id, "completed": False},
+        {"_id": 0}
+    )
+    if not session:
+        raise HTTPException(status_code=404, detail="Session non trouvée ou terminée")
+    return {
+        "session_id": session["session_id"],
+        "game_data": session["game_data"],
+        "mode_id": session["mode_id"],
+        "created_at": session.get("created_at")
+    }
 
 
 @router.post("/games/submit")

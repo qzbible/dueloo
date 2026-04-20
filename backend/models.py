@@ -91,6 +91,7 @@ class DailyManna(BaseModel):
 class GameStartRequest(BaseModel):
     mode_id: str
     lang: str = "fr"
+    config: Optional[Dict[str, Any]] = None
 
 
 class GameSubmitRequest(BaseModel):
@@ -108,6 +109,7 @@ class DuoMatchRequest(BaseModel):
     mode: str = "friend"
     theme: Optional[str] = None
     friend_code: Optional[str] = None
+    mode_id: Optional[str] = None
 
 
 class CreateGroupSessionRequest(BaseModel):

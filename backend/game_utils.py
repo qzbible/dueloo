@@ -96,4 +96,19 @@ def calculate_score(mode_id: str, game_data: dict, user_answers: dict) -> int:
         questions_correct = user_answers.get("questions_correct", 0)
         time_bonus = max(0, user_answers.get("time_bonus", 0))
         score = (5 if completed else 0) + questions_correct + time_bonus
+    elif mode_id in ["chess", "checkers", "connect4", "tictactoe", "othello", "go", "awale", "fanorona", "zamma"]:
+        won = user_answers.get("won", False)
+        difficulty_multiplier = {"facile": 1, "moyen": 1.5, "difficile": 2, "très difficile": 3}.get(user_answers.get("difficulty", "facile"), 1)
+        score = int((10 if won else 2) * difficulty_multiplier)
+    elif mode_id in ["uno", "belote", "poker", "bataille", "rami"]:
+        won = user_answers.get("won", False)
+        score = 8 if won else 1
+    elif mode_id in ["snake", "agario", "course", "football", "combat"]:
+        score = user_answers.get("score", 0)
+    elif mode_id == "tower_defense":
+        score = user_answers.get("waves_survived", 0) * 2
+    elif mode_id == "skribbl":
+        score = user_answers.get("words_guessed", 0) * 3
+    elif mode_id == "memory_biblique":
+        score = user_answers.get("matches", 0)
     return score

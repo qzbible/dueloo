@@ -6,15 +6,30 @@ import axios from 'axios';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
-const QuiADitQuoi = ({ onSubmit }) => {
+const QuiADitQuoi = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
   const [gameData, setGameData] = useState(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState({});
   const [loading, setLoading] = useState(true);
 
   React.useEffect(() => {
-    fetchGameData();
-  }, []);
+    if (duelMode) {
+      if (bothReady && duelMode.role === 'player1') {
+        fetchGameData();
+      }
+    } else {
+      fetchGameData();
+    }
+  }, [bothReady]);
+
+  React.useEffect(() => {
+    if (duelMode && opponentMove) {
+      if (opponentMove.type === 'init' && duelMode.role === 'player2') {
+        setGameData(opponentMove.gameData);
+        setLoading(false);
+      }
+    }
+  }, [opponentMove]);
 
   const fetchGameData = async () => {
     try {
@@ -24,6 +39,9 @@ const QuiADitQuoi = ({ onSubmit }) => {
         { withCredentials: true }
       );
       setGameData(response.data.game_data);
+      if (duelMode && duelMode.role === 'player1') {
+        onMove({ type: 'init', gameData: response.data.game_data });
+      }
     } catch (error) {
       console.error('Erreur:', error);
     } finally {
@@ -35,7 +53,10 @@ const QuiADitQuoi = ({ onSubmit }) => {
     setAnswers({ ...answers, [`q_${currentIndex}`]: answer });
     
     if (currentIndex < gameData.quotes.length - 1) {
-      setTimeout(() => setCurrentIndex(currentIndex + 1), 500);
+      setTimeout(() => {
+        setCurrentIndex(currentIndex + 1);
+        if (duelMode) onMove({ type: 'progress', index: currentIndex + 1 });
+      }, 500);
     } else {
       setTimeout(() => onSubmit({ ...answers, [`q_${currentIndex}`]: answer }), 500);
     }
@@ -49,10 +70,15 @@ const QuiADitQuoi = ({ onSubmit }) => {
 
   return (
     <div className="max-w-3xl mx-auto">
-      <div className="mb-6 text-center">
+      <div className="mb-6 text-center flex justify-center gap-8">
         <span className="text-yellow-400 font-semibold">
-          Question {currentIndex + 1}/{gameData.quotes.length}
+          Vous: {currentIndex + 1}/{gameData.quotes.length}
         </span>
+        {duelMode && (
+          <span className="text-emerald-400 font-semibold">
+            Adversaire: {(opponentMove?.type === 'progress' ? opponentMove.index : (opponentMove?.type === 'init' ? 0 : 0)) + 1}/{gameData.quotes.length}
+          </span>
+        )}
       </div>
 
       <motion.div
