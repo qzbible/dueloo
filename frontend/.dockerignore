@@ -1,0 +1,9 @@
+node_modules
+build
+dist
+.env
+.git
+.gitignore
+Dockerfile
+README.md
+yarn-error.log

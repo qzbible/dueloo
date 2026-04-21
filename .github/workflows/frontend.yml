@@ -52,7 +52,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            REACT_APP_BACKEND_URL=${{ github.ref == 'refs/heads/main' && 'https://backend.immersio.dikotech.com' || 'https://dev-backend.immersio.dikotech.com' }}
+            REACT_APP_BACKEND_URL=${{ github.ref == 'refs/heads/main' && 'https://backend.dueloo.dikotech.com' || 'https://dev-backend.dueloo.dikotech.com' }}
 
   deploy:
     runs-on: ubuntu-latest
