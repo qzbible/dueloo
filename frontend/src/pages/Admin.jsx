@@ -305,7 +305,7 @@ export default function Admin() {
             <ArrowLeft className="w-5 h-5" />
           </button>
           <Shield className="w-6 h-6 text-yellow-400" />
-          <h1 className="text-xl font-bold text-white">Admin BibleQuest</h1>
+          <h1 className="text-xl font-bold text-white">Admin Dueloo</h1>
           <span className="text-xs bg-yellow-400/20 text-yellow-400 px-2 py-0.5 rounded-full font-bold">PANEL</span>
         </div>
         <span className="text-gray-400 text-sm">{user?.email}</span>

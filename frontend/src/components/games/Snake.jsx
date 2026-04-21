@@ -6,7 +6,7 @@ const GRID_SIZE = 20;
 const INITIAL_SNAKE = [[10, 10], [10, 11], [10, 12]];
 const INITIAL_DIR = [0, -1];
 
-const Snake = ({ onSubmit }) => {
+const Snake = ({ onSubmit, isSpectator = false }) => {
   const canvasRef = useRef(null);
   const [snake, setSnake] = useState(INITIAL_SNAKE);
   const [dir, setDir] = useState(INITIAL_DIR);
@@ -47,6 +47,7 @@ const Snake = ({ onSubmit }) => {
 
   useEffect(() => {
     const handleKey = (e) => {
+      if (isSpectator) return;
       switch (e.key) {
         case 'ArrowUp': if (dir[1] !== 1) setDir([0, -1]); break;
         case 'ArrowDown': if (dir[1] !== -1) setDir([0, 1]); break;
@@ -57,12 +58,13 @@ const Snake = ({ onSubmit }) => {
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [dir]);
+  }, [dir, isSpectator]);
 
   useEffect(() => {
+    if (isSpectator) return;
     const interval = setInterval(moveSnake, 150);
     return () => clearInterval(interval);
-  }, [moveSnake]);
+  }, [moveSnake, isSpectator]);
 
   useEffect(() => {
     const ctx = canvasRef.current.getContext('2d');

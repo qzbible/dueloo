@@ -1,15 +1,16 @@
 {
-  "app_name": "BibleQuest",
+  "app_name": "Dueloo",
   "landing": {
-    "tagline": "L'aventure biblique commence ici",
-    "subtitle": "Explorez la Bible comme jamais auparavant. Apprenez, jouez, progressez et débloquez des badges spirituels dans cette aventure gamifiée unique.",
+    "tagline": "L'aventure Dueloo commence ici",
+    "subtitle": "Culture, Quiz et Défis. Apprenez, jouez, progressez et débloquez des badges dans cette aventure gamifiée unique.",
     "cta": "Commencer l'aventure",
     "feature_campaign": "Mode Campagne",
-    "feature_campaign_desc": "Traversez la Bible de la Genèse à l'Apocalypse",
+    "feature_campaign_desc": "Traversez des centaines de défis thématiques",
     "feature_badges": "Badges & Niveaux",
-    "feature_badges_desc": "Gagnez des récompenses et progressez dans votre foi",
+    "feature_badges_desc": "Gagnez des récompenses et progressez",
     "feature_premium": "Premium",
-    "feature_premium_desc": "Pass 1h ou 24h pour accès illimité"
+    "feature_premium_desc": "Pass 1h ou 24h pour accès illimité",
+    "watch_live": "Regarder en Live"
   },
   "dashboard": {
     "logout": "Déconnexion",
@@ -19,10 +20,10 @@
     "coins": "Pièces",
     "streak": "Série",
     "campaign_mode": "Mode Campagne",
-    "campaign_desc": "Traversez la Bible livre par livre",
+    "campaign_desc": "Progressez étape par étape",
     "play_now": "Jouer maintenant",
     "all_modes": "Tous les Modes",
-    "all_modes_desc": "90+ jeux et quiz bibliques",
+    "all_modes_desc": "90+ jeux et quiz thématiques",
     "discover": "Découvrir",
     "become_premium": "Devenir Premium",
     "premium_desc": "Accès illimité et fonctionnalités exclusives",
@@ -41,7 +42,7 @@
   },
   "games": {
     "title": "Modes de Jeu",
-    "subtitle": "Découvrez plus de 90 façons de vivre la Bible !",
+    "subtitle": "Découvrez plus de 90 façons de tester vos connaissances !",
     "tournaments": "Tournois",
     "spectator": "Spectateur",
     "play": "Jouer",
@@ -146,7 +147,7 @@
   },
   "labyrinthe": {
     "loading": "Génération du labyrinthe...",
-    "promised_land": "Terre Promise atteinte !",
+    "promised_land": "Objectif atteint !",
     "time_up": "Temps écoulé !",
     "steps": "Pas",
     "questions": "Questions",
@@ -157,7 +158,7 @@
     "title": "Mode Groupe",
     "subtitle": "Sessions multi-joueurs type Kahoot !",
     "create_session": "Créer une Session",
-    "create_desc": "Idéal pour églises, congrès, et groupes de jeunes",
+    "create_desc": "Idéal pour les fêtes, écoles, et groupes d'amis",
     "session_name": "Nom de la session",
     "create": "Créer la Session",
     "join_session": "Rejoindre une Session",
@@ -181,7 +182,7 @@
   },
   "polyglot": {
     "title": "Progression Polyglotte",
-    "badge_name": "Polyglotte Biblique",
+    "badge_name": "Polyglotte",
     "badge_desc": "Jouez 5+ parties en FR et EN",
     "games_fr": "Parties en Français",
     "games_en": "Parties en Anglais",

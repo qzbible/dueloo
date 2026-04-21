@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 const ROWS = 6;
 const COLS = 7;
 
-const Connect4 = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
+const Connect4 = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator = false }) => {
   const [board, setBoard] = useState(Array(ROWS).fill(null).map(() => Array(COLS).fill(null)));
   const [isRedNext, setIsRedNext] = useState(true);
   const [winner, setWinner] = useState(null);
@@ -180,6 +180,8 @@ const Connect4 = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
             duelMode ? (
                 !bothReady ? "Attente de la connexion de l'adversaire..." :
                 ((duelMode.role === 'player1' ? isRedNext : !isRedNext) ? "À vous (Rouge) !" : "Attente de l'adversaire...")
+            ) : isSpectator ? (
+                `Vue Spectateur — ${isRedNext ? 'Rouge' : 'Jaune'} joue`
             ) : (
                 isRedNext ? "À vous (Rouge)" : "IA réfléchit (Jaune)..."
             )
@@ -195,7 +197,7 @@ const Connect4 = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
               className="group cursor-pointer"
               onClick={() => {
                 const isMyTurn = !duelMode || (bothReady && (duelMode.role === 'player1' ? isRedNext : !isRedNext));
-                if (isMyTurn && !winner) {
+                if (isMyTurn && !winner && !isSpectator) {
                     const myColor = duelMode ? (duelMode.role === 'player1' ? 'R' : 'Y') : 'R';
                     if (getFreeRow(board, c) !== -1) {
                         if (duelMode) onMove({ type: 'drop', col: c });

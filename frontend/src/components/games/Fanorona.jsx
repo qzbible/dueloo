@@ -87,7 +87,19 @@ const Fanorona = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
     if (!move) return;
 
     if (duelMode) {
-      onMove({ type: 'move', from: selected, to: { r: nr, c: nc }, move, capType });
+      let newBoard = board.map(row => [...row]);
+      const color = newBoard[selected.r][selected.c];
+      newBoard[nr][nc] = color;
+      newBoard[selected.r][selected.c] = null;
+
+      const { approach, withdrawal } = move.caps;
+      let actualCaptures = [];
+      if (capType === 'approach') actualCaptures = approach;
+      else if (capType === 'withdrawal') actualCaptures = withdrawal;
+      else actualCaptures = [...approach, ...withdrawal];
+
+      actualCaptures.forEach(p => newBoard[p.r][p.c] = null);
+      onMove({ type: 'move', from: selected, to: { r: nr, c: nc }, move, capType, boardState: newBoard, turnState: color === 'B' ? 'W' : 'B' });
     }
 
     applyMove(selected, { r: nr, c: nc }, move, capType);
@@ -96,6 +108,8 @@ const Fanorona = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
   const applyMove = (from, to, move, capType = null) => {
     let newBoard = board.map(row => [...row]);
     const color = newBoard[from.r][from.c];
+    if (!color) return;
+
     newBoard[to.r][to.c] = color;
     newBoard[from.r][from.c] = null;
 
@@ -151,6 +165,12 @@ const Fanorona = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
 
   useEffect(() => {
     if (duelMode && opponentMove && opponentMove.type === 'move') {
+      if (opponentMove.boardState) {
+        setBoard(opponentMove.boardState);
+        if (opponentMove.turnState) setTurn(opponentMove.turnState);
+        checkEnd(opponentMove.boardState);
+        return;
+      }
       const { from, to, move, capType } = opponentMove;
       applyMove(from, to, move, capType);
     }

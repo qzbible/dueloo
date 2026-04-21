@@ -19,6 +19,8 @@ class User(BaseModel):
     mmr: int = 1000
     created_at: Any = ""
     is_admin: bool = False
+    status: str = "active" # active, banned, timeout
+    role: str = "user" # user, moderator, admin
 
 
 class UserSession(BaseModel):
@@ -113,7 +115,7 @@ class DuoMatchRequest(BaseModel):
 
 
 class CreateGroupSessionRequest(BaseModel):
-    name: str = "Session BibleQuest"
+    name: str = "Session Dueloo"
     category: Optional[str] = None
     num_questions: int = 10
     max_players: int = 20

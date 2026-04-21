@@ -19,6 +19,7 @@ from database import db, client
 from models import User, UserSession, GameStartRequest, GameSubmitRequest, CheckoutRequest, DuoMatchRequest, CreateGroupSessionRequest, JoinGroupRequest
 from auth import get_current_user, get_session_token
 from game_utils import generate_word_search_grid, generate_maze, calculate_score
+from interactions_manager import interaction_manager
 from i18n_content import (
     get_quiz_qui_a_dit, get_quiz_vrai_faux, get_chrono_versets,
     get_mots_caches, get_anagrammes, get_labyrinthe_questions
@@ -247,18 +248,25 @@ async def get_duo_leaderboard():
     return leaderboard
 
 @api_router.get("/duo/active-matches")
-async def get_active_matches(request: Request, authorization: Optional[str] = Header(None)):
-    user = await get_current_user(request, authorization)
+async def get_active_matches(request: Request):
     matches = await db.duo_matches.find(
         {"status": {"$in": ["ready", "playing"]}, "player2_id": {"$ne": None}},
-        {"_id": 0, "match_id": 1, "player1_name": 1, "player2_name": 1, "player1_score": 1, "player2_score": 1, "current_question": 1, "status": 1}
-    ).to_list(20)
-    return matches
+        {"_id": 0, "match_id": 1, "player1_name": 1, "player2_name": 1, "player1_score": 1, "player2_score": 1, "current_question": 1, "status": 1, "mode_id": 1}
+    ).to_list(100)
+    
+    active_live_matches = []
+    for match in matches:
+        match_id = match["match_id"]
+        # Ensure both players have active websocket connections
+        connected_players = [p for p in duo_rooms.get(match_id, {}).values() if p.get("role") in ["player1", "player2", "player"]]
+        if len(connected_players) >= 2:
+            active_live_matches.append(match)
+            
+    return active_live_matches[:20]
 
 # Dynamic route AFTER statics
 @api_router.get("/duo/{match_id}")
-async def get_duo_match(match_id: str, request: Request, authorization: Optional[str] = Header(None)):
-    user = await get_current_user(request, authorization)
+async def get_duo_match(match_id: str):
     match = await db.duo_matches.find_one({"match_id": match_id}, {"_id": 0})
     if not match:
         raise HTTPException(status_code=404, detail="Match non trouvé")
@@ -529,6 +537,17 @@ async def connect(sid, environ):
 @sio.event
 async def disconnect(sid):
     logging.info(f"Client disconnected: {sid}")
+    # Cleanup duo_rooms
+    for match_id in list(duo_rooms.keys()):
+        if sid in duo_rooms[match_id]:
+            role = duo_rooms[match_id][sid].get("role")
+            user_id = duo_rooms[match_id][sid].get("user_id")
+            del duo_rooms[match_id][sid]
+            logging.info(f"Removed {role} {user_id} (sid: {sid}) from match {match_id}")
+            
+            # If room is empty, optionally cleanup
+            if not duo_rooms[match_id]:
+                del duo_rooms[match_id]
 
 @sio.event
 async def join_duo_room(sid, data):
@@ -561,6 +580,51 @@ async def rejoin_duo_room(sid, data):
     players = [v for v in duo_rooms.get(match_id, {}).values() if v["role"] != "spectator"]
     if len(players) >= 2:
         await sio.emit("both_ready", {"match_id": match_id}, room=match_id)
+
+@sio.event
+async def spectate_match(sid, data):
+    match_id = data.get("match_id")
+    user_id = data.get("user_id", "anonymous")
+    user_name = data.get("user_name", "Spectateur")
+    
+    await sio.enter_room(sid, match_id)
+    duo_rooms.setdefault(match_id, {})[sid] = {"user_id": user_id, "role": "spectator", "name": user_name}
+    
+    # Get current state
+    match = await db.duo_matches.find_one({"match_id": match_id}, {"_id": 0})
+    likes = interaction_manager.get_likes(match_id)
+    comments = interaction_manager.get_comments(match_id)
+    
+    await sio.emit("spectator_joined", {
+        "match_id": match_id, 
+        "likes": likes,
+        "comments": comments,
+        "current_state": match
+    }, room=sid)
+
+@sio.event
+async def game_like(sid, data):
+    match_id = data.get("match_id")
+    player_role = data.get("player_role") # player1, player2 or None
+    new_count = interaction_manager.add_like(match_id, player_role)
+    await sio.emit("like_update", {"match_id": match_id, "player_role": player_role, "count": new_count}, room=match_id)
+
+@sio.event
+async def game_comment(sid, data):
+    match_id = data.get("match_id")
+    user_id = data.get("user_id")
+    user_name = data.get("user_name")
+    text = data.get("text")
+    if not text: return
+    comment = interaction_manager.add_comment(match_id, user_id, user_name, text)
+    await sio.emit("new_comment", {"match_id": match_id, "comment": comment}, room=match_id)
+
+@sio.event
+async def game_reaction(sid, data):
+    match_id = data.get("match_id")
+    reaction_type = data.get("reaction_type")
+    interaction_manager.record_reaction(match_id, reaction_type)
+    await sio.emit("new_reaction", {"match_id": match_id, "reaction_type": reaction_type, "sid": sid}, room=match_id)
 
 @sio.event
 async def player_ready(sid, data):
@@ -650,6 +714,20 @@ async def submit_answer(sid, data):
                     if pid:
                         await db.duo_leaderboard.update_one({"user_id": pid}, {"$inc": {"draws": 1}})
             
+            # Persist social metrics from Redis to MongoDB
+            social_likes = interaction_manager.get_likes(match_id)
+            social_comments = interaction_manager.get_comments(match_id)
+            await db.duo_matches.update_one(
+                {"match_id": match_id},
+                {"$set": {
+                    "social_metrics": {
+                        "likes": social_likes,
+                        "comments": social_comments
+                    }
+                }}
+            )
+            # interaction_manager.cleanup(match_id) # Optional: clear Redis cache
+            
             await sio.emit("game_end", {"winner": winner, "player1_score": p1_score, "player2_score": p2_score}, room=match_id)
         else:
             import asyncio
@@ -671,26 +749,46 @@ async def game_move(sid, data):
 @sio.event
 async def webrtc_offer(sid, data):
     match_id = data.get("match_id")
-    await sio.emit("webrtc_offer", data, room=match_id, skip_sid=sid)
+    target_sid = data.get("target_sid")
+    data["from_sid"] = sid
+    logging.info(f"WebRTC Offer from {sid} to {target_sid or match_id}")
+    if target_sid:
+        await sio.emit("webrtc_offer", data, room=target_sid)
+    else:
+        await sio.emit("webrtc_offer", data, room=match_id, skip_sid=sid)
 
 @sio.event
 async def webrtc_answer(sid, data):
     match_id = data.get("match_id")
-    await sio.emit("webrtc_answer", data, room=match_id, skip_sid=sid)
+    target_sid = data.get("target_sid")
+    data["from_sid"] = sid
+    logging.info(f"WebRTC Answer from {sid} to {target_sid or match_id}")
+    if target_sid:
+        await sio.emit("webrtc_answer", data, room=target_sid)
+    else:
+        await sio.emit("webrtc_answer", data, room=match_id, skip_sid=sid)
 
 @sio.event
 async def webrtc_ice_candidate(sid, data):
     match_id = data.get("match_id")
-    await sio.emit("webrtc_ice_candidate", data, room=match_id, skip_sid=sid)
+    target_sid = data.get("target_sid")
+    data["from_sid"] = sid
+    if target_sid:
+        await sio.emit("webrtc_ice_candidate", data, room=target_sid)
+    else:
+        await sio.emit("webrtc_ice_candidate", data, room=match_id, skip_sid=sid)
 
 @sio.event
 async def webrtc_ready(sid, data):
     match_id = data.get("match_id")
     user_id = data.get("user_id")
     
-    room_data = duo_rooms.get(match_id, {})
-    
     # Auto-register the sid if it joined the room but wasn't tracked yet
+    if match_id not in duo_rooms:
+        duo_rooms[match_id] = {}
+        
+    room_data = duo_rooms[match_id]
+    
     if sid not in room_data:
         match = await db.duo_matches.find_one({"match_id": match_id}, {"_id": 0})
         if match:
@@ -700,9 +798,8 @@ async def webrtc_ready(sid, data):
                 role = "player2"
             else:
                 return # Not part of this match
-            duo_rooms.setdefault(match_id, {})[sid] = {"user_id": user_id, "role": role}
+            room_data[sid] = {"user_id": user_id, "role": role}
             await sio.enter_room(sid, match_id)
-            room_data = duo_rooms[match_id]
     
     if sid in room_data:
         room_data[sid]["webrtc_ready"] = True
@@ -711,6 +808,13 @@ async def webrtc_ready(sid, data):
     print(f"WebRTC ready: {len(ready_players)}/2 players ready in {match_id}")
     if len(ready_players) >= 2:
         await sio.emit("start_webrtc", {"match_id": match_id}, room=match_id)
+
+@sio.event
+async def spectator_voice_ready(sid, data):
+    match_id = data.get("match_id")
+    logging.info(f"Spectator {sid} ready for voice in match {match_id}")
+    # Notify players that a spectator is ready to receive audio
+    await sio.emit("spectator_voice_ready", {"match_id": match_id, "spectator_sid": sid}, room=match_id)
 
 # Group Socket.IO events
 @sio.event
@@ -751,6 +855,39 @@ async def group_answer(sid, data):
 # ── Middleware & Config ──────────────────────────────────────────────
 fastapi_app.include_router(api_router)
 fastapi_app.include_router(admin_router, prefix="/api")
+
+
+# ── Admin: Update Game Mode (name, description, icon, available, difficulty) ───
+@fastapi_app.patch("/api/admin/game-modes/{mode_id}")
+async def update_game_mode(mode_id: str, request: Request, authorization: Optional[str] = Header(None)):
+    """Update any fields of a game mode and broadcast changes to all clients via Socket.IO."""
+    from auth import get_admin_user
+    await get_admin_user(request, authorization)
+
+    body = await request.json()
+
+    # Only allow whitelisted fields to be updated
+    ALLOWED_FIELDS = {"name", "description", "icon", "available", "difficulty", "duration_minutes", "color"}
+    updates = {k: v for k, v in body.items() if k in ALLOWED_FIELDS}
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="Aucun champ valide fourni")
+
+    result = await db.game_modes.update_one(
+        {"mode_id": mode_id},
+        {"$set": updates}
+    )
+
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Mode de jeu non trouvé")
+
+    # Fetch the full updated document to broadcast to all clients
+    updated_mode = await db.game_modes.find_one({"mode_id": mode_id}, {"_id": 0})
+
+    # Broadcast the full updated mode to ALL connected clients in real-time
+    await sio.emit("game_mode_updated", updated_mode)
+
+    return {"mode_id": mode_id, "updates": updates, "message": "Mode mis à jour et diffusé en temps réel"}
 
 fastapi_app.add_middleware(
     CORSMiddleware,

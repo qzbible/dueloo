@@ -65,7 +65,7 @@ const Leaderboard = () => {
           <h1 className="text-4xl sm:text-5xl font-bold text-white mb-3" style={{ fontFamily: 'Fraunces, serif' }}>
             Classement Global
           </h1>
-          <p className="text-lg text-blue-200">Les meilleurs joueurs de BibleQuest</p>
+          <p className="text-lg text-blue-200">Les meilleurs joueurs de Dueloo</p>
         </motion.div>
 
         <Tabs defaultValue="all_time" className="max-w-4xl mx-auto" onValueChange={setPeriod}>

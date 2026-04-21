@@ -10,7 +10,6 @@ import Campaign from '@/pages/Campaign';
 import QuizGame from '@/pages/QuizGame';
 import Premium from '@/pages/Premium';
 import PremiumSuccess from '@/pages/PremiumSuccess';
-import GameModes from '@/pages/GameModes';
 import GameConfig from '@/pages/GameConfig';
 import GamePlay from '@/pages/GamePlay';
 import ModeDuo from '@/pages/ModeDuo';
@@ -23,7 +22,7 @@ import GroupPlay from '@/pages/GroupPlay';
 import Leaderboard from '@/pages/Leaderboard';
 import Achievements from '@/pages/Achievements';
 import Tournaments from '@/pages/Tournaments';
-import { SpectatorList, SpectatorView } from '@/pages/Spectator';
+import SpectatorFeed from '@/pages/Spectator';
 import Admin from '@/pages/Admin';
 
 function AppRouter() {
@@ -39,7 +38,7 @@ function AppRouter() {
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/campaign" element={<Campaign />} />
       <Route path="/quiz" element={<QuizGame />} />
-      <Route path="/games" element={<GameModes />} />
+      <Route path="/games" element={<Dashboard />} />
       <Route path="/config/:modeId" element={<GameConfig />} />
       <Route path="/play/:modeId" element={<GamePlay />} />
       <Route path="/duo" element={<ModeDuo />} />
@@ -52,8 +51,7 @@ function AppRouter() {
       <Route path="/leaderboard" element={<Leaderboard />} />
       <Route path="/achievements" element={<Achievements />} />
       <Route path="/tournaments" element={<Tournaments />} />
-      <Route path="/spectate" element={<SpectatorList />} />
-      <Route path="/spectate/:matchId" element={<SpectatorView />} />
+      <Route path="/spectate" element={<SpectatorFeed />} />
       <Route path="/premium" element={<Premium />} />
       <Route path="/premium-success" element={<PremiumSuccess />} />
       <Route path="/admin" element={<Admin />} />

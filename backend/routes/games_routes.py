@@ -16,8 +16,7 @@ router = APIRouter(prefix="/api")
 
 
 @router.get("/game-modes")
-async def get_game_modes(request: Request, authorization: Optional[str] = Header(None), category: Optional[str] = None):
-    user = await get_current_user(request, authorization)
+async def get_game_modes(category: Optional[str] = None):
     query = {}
     if category:
         query["category"] = category

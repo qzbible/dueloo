@@ -6,11 +6,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 const COLORS = ['red', 'blue', 'green', 'yellow'];
 const VALUES = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'Skip', 'Reverse', '+2'];
 
-const UNO = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
-  const [deck, setDeck] = useState(generateDeck());
+const UNO = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator = false, role = 'player1', gameData = null }) => {
+  const [deck, setDeck] = useState(gameData?.deck || generateDeck());
   const [playerHand, setPlayerHand] = useState([]);
   const [aiHand, setAiHand] = useState([]);
-  const [discardPile, setDiscardPile] = useState([]);
+  const [discardPile, setDiscardPile] = useState(gameData?.discard || []);
   const [turn, setTurn] = useState(0); // 0 for Player, 1 for AI
   const [winner, setWinner] = useState(null);
 
@@ -26,6 +26,17 @@ const UNO = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
   }
 
   useEffect(() => {
+    if (isSpectator && gameData) {
+      // For spectators, role determines whose hand is "active" (bottom)
+      const isP1View = role === 'player1';
+      setPlayerHand(isP1View ? gameData.player1_hand || [] : gameData.player2_hand || []);
+      setAiHand(isP1View ? gameData.player2_hand || [] : gameData.player1_hand || []);
+      setDiscardPile(gameData.discard || []);
+      setDeck(gameData.deck || []);
+      setTurn(gameData.turn || 0);
+      return;
+    }
+
     if (duelMode) {
       if (bothReady && duelMode.role === 'player1') {
         const d = [...deck];
@@ -53,40 +64,54 @@ const UNO = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
       setDiscardPile([d.splice(0, 1)[0]]);
       setDeck(d);
     }
-  }, [bothReady]);
+  }, [bothReady, isSpectator, role, gameData]);
 
   useEffect(() => {
-    if (duelMode && opponentMove) {
-      if (opponentMove.type === 'init' && duelMode.role === 'player2') {
-        setPlayerHand(opponentMove.p2Hand);
-        setAiHand(opponentMove.p1Hand);
+    if ((duelMode || isSpectator) && opponentMove) {
+      if (opponentMove.type === 'init' && (duelMode?.role === 'player2' || isSpectator)) {
+        const isP2View = (duelMode?.role === 'player2') || (isSpectator && role === 'player2');
+        setPlayerHand(isP2View ? opponentMove.p2Hand : opponentMove.p1Hand);
+        setAiHand(isP2View ? opponentMove.p1Hand : opponentMove.p2Hand);
         setDiscardPile(opponentMove.discard);
         setDeck(opponentMove.deck);
       } else if (opponentMove.type === 'play') {
         applyOpponentMove(opponentMove.card);
       } else if (opponentMove.type === 'draw') {
         drawCards(1, 1);
-        setTurn(duelMode.role === 'player1' ? 0 : 1);
+        const currentRole = duelMode?.role || role;
+        setTurn(currentRole === 'player1' ? 0 : 1);
       }
     }
   }, [opponentMove]);
 
   const applyOpponentMove = (card) => {
+    if (!card) return;
     const newDiscard = [...discardPile, card];
     setDiscardPile(newDiscard);
     const newHand = aiHand.filter(c => c.id !== card.id);
     setAiHand(newHand);
-    if (newHand.length === 0) setWinner(duelMode.role === 'player1' ? 1 : 0);
-    else handleSpecialActions(card, duelMode.role === 'player1' ? 0 : 1);
+    if (newHand.length === 0) setWinner(duelMode?.role === 'player1' ? 1 : 0);
+    else handleSpecialActions(card, duelMode?.role === 'player1' ? 0 : 1);
   };
 
   const canPlay = (card) => {
     const top = discardPile[discardPile.length - 1];
+    if (!top) return true;
     return card.color === top.color || card.value === top.value;
   };
 
+  const drawCards = (target, count) => {
+    if (isSpectator && target === 0) return; // Viewer's perspective target is blocked
+    let d = [...deck];
+    if (d.length < count) d = [...d, ...generateDeck()];
+    const drawn = d.splice(0, count);
+    if (target === 0) setPlayerHand(prev => [...prev, ...drawn]);
+    else setAiHand(prev => [...prev, ...drawn]);
+    setDeck(d);
+  };
+
   const playCard = (card, isAI = false) => {
-    if (winner || (isAI && turn !== 1) || (!isAI && turn !== 0)) return;
+    if (winner || isSpectator || (isAI && turn !== 1) || (!isAI && turn !== 0)) return;
     if (!canPlay(card)) return;
 
     const newDiscard = [...discardPile, card];
@@ -116,15 +141,6 @@ const UNO = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
     } else {
         setTurn(nextTurn);
     }
-  };
-
-  const drawCards = (target, count) => {
-    let d = [...deck];
-    if (d.length < count) d = [...d, ...generateDeck()];
-    const drawn = d.splice(0, count);
-    if (target === 0) setPlayerHand(prev => [...prev, ...drawn]);
-    else setAiHand(prev => [...prev, ...drawn]);
-    setDeck(d);
   };
 
   const makeAIMove = useCallback(() => {

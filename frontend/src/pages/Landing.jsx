@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { Sparkles, Trophy, Book, Crown, ArrowRight } from 'lucide-react';
+import { Sparkles, Crown, ArrowRight } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 
@@ -11,15 +11,11 @@ const Landing = () => {
   const { t } = useTranslation();
 
   const handleLogin = () => {
-    const redirectUrl = window.location.origin + '/games';
+    const redirectUrl = window.location.origin + '/dashboard';
     window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
   };
 
-  const features = [
-    { icon: <Book className="w-10 h-10 text-yellow-400" />, title: t('landing.feature_campaign'), description: t('landing.feature_campaign_desc') },
-    { icon: <Trophy className="w-10 h-10 text-yellow-400" />, title: t('landing.feature_badges'), description: t('landing.feature_badges_desc') },
-    { icon: <Crown className="w-10 h-10 text-yellow-400" />, title: t('landing.feature_premium'), description: t('landing.feature_premium_desc') },
-  ];
+
 
   return (
     <div className="min-h-screen relative overflow-hidden bg-[#0a0b1e]">
@@ -53,7 +49,7 @@ const Landing = () => {
           </motion.div>
 
           <h1 className="text-6xl sm:text-8xl lg:text-9xl font-black text-white mb-8 tracking-tighter leading-none">
-             Bible<span className="text-gradient">Quest</span>
+             Duel<span className="text-gradient">oo</span>
           </h1>
           
           <p className="text-xl sm:text-2xl text-blue-100/80 mb-14 max-w-2xl mx-auto leading-relaxed font-light">
@@ -63,13 +59,13 @@ const Landing = () => {
           <motion.div 
             whileHover={{ scale: 1.02 }} 
             whileTap={{ scale: 0.98 }}
-            className="flex flex-col sm:flex-row items-center justify-center gap-6"
+            className="flex flex-col items-center justify-center gap-6"
           >
             <Button 
               data-testid="login-button" 
               onClick={handleLogin} 
               size="lg" 
-              className="text-xl px-12 py-8 rounded-2xl bg-gradient-to-r from-yellow-400 via-yellow-500 to-yellow-600 hover:from-yellow-500 hover:to-yellow-700 text-slate-950 font-black shadow-[0_0_40px_rgba(234,179,8,0.3)] transition-all duration-300 border-b-4 border-yellow-700"
+              className="text-xl px-12 py-8 rounded-2xl bg-gradient-to-r from-yellow-400 via-yellow-500 to-yellow-600 hover:from-yellow-500 hover:to-yellow-700 text-slate-950 font-black shadow-[0_0_40px_rgba(234,179,8,0.3)] transition-all duration-300 border-b-4 border-yellow-700 w-full sm:w-auto"
             >
               <Crown className="w-6 h-6 mr-3" />
               {t('landing.cta')}
@@ -77,24 +73,6 @@ const Landing = () => {
             </Button>
           </motion.div>
         </motion.div>
-
-        <div className="grid md:grid-cols-3 gap-8 mt-32 max-w-6xl mx-auto pb-20">
-          {features.map((feature, index) => (
-            <motion.div 
-              key={index} 
-              initial={{ opacity: 0, y: 30 }} 
-              animate={{ opacity: 1, y: 0 }} 
-              transition={{ duration: 0.6, delay: 0.5 + index * 0.1 }} 
-              className="p-10 rounded-3xl glass hover:bg-white/15 transition-all duration-500 group"
-            >
-              <div className="mb-6 transform group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300">
-                {feature.icon}
-              </div>
-              <h3 className="text-2xl font-bold text-white mb-4">{feature.title}</h3>
-              <p className="text-blue-100/70 leading-relaxed font-medium">{feature.description}</p>
-            </motion.div>
-          ))}
-        </div>
       </div>
     </div>
   );

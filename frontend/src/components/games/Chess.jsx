@@ -11,7 +11,7 @@ const PIECES = {
   K: { type: 'king', value: 100, icon: '♚' }
 };
 
-const Chess = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
+const Chess = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator = false }) => {
   const [board, setBoard] = useState(initialBoard());
   const [turn, setTurn] = useState('w'); // 'w' for White (Player), 'b' for Black (AI)
   const [selected, setSelected] = useState(null);
@@ -91,12 +91,19 @@ const Chess = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
     const isMyTurn = !duelMode || (bothReady && (duelMode.role === 'player1' ? turn === 'w' : turn === 'b'));
     const myColor = duelMode ? (duelMode.role === 'player1' ? 'w' : 'b') : 'w';
 
-    if (winner || !isMyTurn) return;
+    if (winner || !isMyTurn || isSpectator) return;
     if (board[r][c]?.color === myColor) {
       setSelected({ r, c });
       setValidMoves(getMoves(board, r, c));
     } else if (selected && validMoves.some(m => m.r === r && m.c === c)) {
-      if (duelMode) onMove({ type: 'move', fr: selected.r, fc: selected.c, tr: r, tc: c });
+      if (duelMode) {
+        let newBoard = board.map(row => [...row]);
+        const p = newBoard[selected.r][selected.c];
+        newBoard[r][c] = p;
+        newBoard[selected.r][selected.c] = null;
+        if (p.piece === 'P' && (r === 0 || r === 7)) p.piece = 'Q';
+        onMove({ type: 'move', fr: selected.r, fc: selected.c, tr: r, tc: c, boardState: newBoard, turnState: turn === 'w' ? 'b' : 'w' });
+      }
       applyMove(selected.r, selected.c, r, c);
     }
   };
@@ -104,7 +111,8 @@ const Chess = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
   const applyMove = (fr, fc, tr, tc) => {
     let newBoard = board.map(row => [...row]);
     const p = newBoard[fr][fc];
-    
+    if (!p) return;
+
     if (newBoard[tr][tc]?.piece === 'K') {
         setWinner(p.color);
     }
@@ -177,6 +185,11 @@ const Chess = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
 
   useEffect(() => {
     if (duelMode && opponentMove && opponentMove.type === 'move') {
+      if (opponentMove.boardState) {
+        setBoard(opponentMove.boardState);
+        if (opponentMove.turnState) setTurn(opponentMove.turnState);
+        return;
+      }
       const { fr, fc, tr, tc } = opponentMove;
       applyMove(fr, fc, tr, tc);
     }
@@ -188,7 +201,7 @@ const Chess = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
   const myColorLabel = myColor === 'w' ? 'Blancs ♙' : 'Noirs ♟';
 
   return (
-    <div className="max-w-xl mx-auto">
+    <div className={`${isSpectator ? 'w-full h-full' : 'max-w-xl mx-auto'} flex flex-col`}>
       {/* ─── Turn Status & Info ─────────────────────────── */}
       <div className="text-center mb-6">
         {/* Status badge */}
@@ -207,6 +220,8 @@ const Chess = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
               : isMyTurnNow
               ? `♟ Votre tour (${myColorLabel})`
               : '⏳ Adversaire réfléchit…'
+          ) : isSpectator ? (
+            `♟ Vue Spectateur — ${turn === 'w' ? 'Blancs' : 'Noirs'} jouent`
           ) : (
             turn === 'w' ? '♟ Votre tour (Blancs)' : '🤖 L\'IA réfléchit (Noirs)…'
           )}
@@ -222,7 +237,7 @@ const Chess = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
         )}
       </div>
 
-      <Card className="p-2 bg-stone-900 shadow-2xl border-4 border-stone-800 aspect-square">
+      <Card className={`p-1 sm:p-2 bg-stone-900 shadow-2xl border-2 sm:border-4 border-stone-800 aspect-square w-full max-w-[min(90vw,500px)] lg:max-w-none mx-auto`}>
         <div className="grid grid-cols-8 grid-rows-8 h-full">
           {board.map((row, r) => row.map((cell, c) => {
             const isSelected = selected?.r === r && selected?.c === c;

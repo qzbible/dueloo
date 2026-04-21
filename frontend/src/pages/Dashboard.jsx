@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 import { useAuthStore } from '@/stores/authStore';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -8,8 +8,10 @@ import LanguageSwitcher from '@/components/LanguageSwitcher';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { Sparkles, Trophy, Heart, Coins, Crown, BookOpen, Award, Zap, LogOut, Shield, ChevronRight } from 'lucide-react';
-import DailyMannaModal from '@/components/DailyMannaModal';
+import { Sparkles, Trophy, Heart, Coins, Crown, BookOpen, Award, Zap, LogOut, Shield, ChevronRight, Play, Lock, Clock, Eye, Search } from 'lucide-react';
+import { io } from 'socket.io-client';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -18,26 +20,54 @@ const Dashboard = () => {
   const { t } = useTranslation();
   const { user, setUser, clearUser } = useAuthStore();
   const [badges, setBadges] = useState([]);
-  const [dailyMannaStatus, setDailyMannaStatus] = useState({ can_play: false, streak: 0 });
-  const [showDailyManna, setShowDailyManna] = useState(false);
+  const [gameModes, setGameModes] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => { fetchUserData(); }, []);
+  useEffect(() => { 
+    fetchUserData();
+    fetchGameModes();
+
+    const socket = io(BACKEND_URL, { path: '/api/socket.io', transports: ['websocket'] });
+    socket.on('game_mode_updated', (updatedMode) => {
+      setGameModes(prev => prev.map(m => m.mode_id === updatedMode.mode_id ? { ...m, ...updatedMode } : m));
+    });
+
+    return () => socket.disconnect();
+  }, []);
 
   const fetchUserData = async () => {
     try {
-      const [userRes, badgesRes, dailyRes] = await Promise.all([
+      const [userRes, badgesRes] = await Promise.all([
         axios.get(`${BACKEND_URL}/api/auth/me`, { withCredentials: true }),
-        axios.get(`${BACKEND_URL}/api/badges`, { withCredentials: true }),
-        axios.get(`${BACKEND_URL}/api/daily-manna/status`, { withCredentials: true })
+        axios.get(`${BACKEND_URL}/api/badges`, { withCredentials: true })
       ]);
       setUser(userRes.data);
       setBadges(badgesRes.data);
-      setDailyMannaStatus(dailyRes.data);
-      if (dailyRes.data.can_play) setTimeout(() => setShowDailyManna(true), 1000);
     } catch (error) {
       if (error.response?.status === 401) navigate('/');
     } finally { setLoading(false); }
+  };
+
+  const fetchGameModes = async () => {
+    try {
+      const response = await axios.get(`${BACKEND_URL}/api/game-modes`, { withCredentials: true });
+      setGameModes(response.data);
+    } catch (error) {
+      console.error('Erreur chargement modes:', error);
+    }
+  };
+
+  const filteredModes = gameModes.filter(mode => {
+    const matchesCategory = selectedCategory === 'all' || mode.category === selectedCategory;
+    const matchesSearch = mode.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          mode.description.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesCategory && matchesSearch;
+  });
+
+  const startGame = (modeId) => {
+    navigate(`/config/${modeId}`);
   };
 
   const handleLogout = async () => {
@@ -60,180 +90,175 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="min-h-screen relative overflow-hidden bg-[#0a0b1e] text-blue-100/90 pb-20">
+    <div className="min-h-screen relative bg-[#0a0b1e] text-blue-100/90 pb-20">
       {/* Background Orbs */}
-      <div className="absolute inset-0 pointer-events-none">
+      <div className="fixed inset-0 pointer-events-none">
         <div className="absolute top-[-10%] right-[-5%] w-[40%] h-[40%] bg-blue-600/10 rounded-full blur-[120px]" />
         <div className="absolute bottom-[-10%] left-[-5%] w-[40%] h-[40%] bg-purple-600/10 rounded-full blur-[120px]" />
       </div>
 
-      <div className="relative z-10 container mx-auto px-6 py-10">
-        <div className="flex justify-between items-center mb-12">
-          <motion.h1 
-            initial={{ opacity: 0, x: -20 }} 
-            animate={{ opacity: 1, x: 0 }} 
-            className="text-4xl font-black text-white tracking-tight"
-          >
-            Bible<span className="text-gradient">Quest</span>
-          </motion.h1>
-          <div className="flex items-center gap-4">
+      {/* Sticky Header */}
+      <header className="sticky top-0 z-50 glass border-b border-white/5 backdrop-blur-xl">
+        <div className="container mx-auto px-6 h-20 flex items-center justify-between">
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-3 group cursor-pointer" onClick={() => navigate('/profile')}>
+              <div className="relative">
+                <img src={user?.picture || 'https://via.placeholder.com/40'} alt={user?.name} className="w-10 h-10 rounded-xl border-2 border-white/10 object-cover shadow-lg group-hover:border-blue-500 transition-all" />
+                {user?.is_premium && <Crown className="absolute -top-1.5 -right-1.5 w-4 h-4 text-yellow-400 drop-shadow-md" />}
+              </div>
+              <div className="hidden sm:block">
+                <p className="text-sm font-black text-white leading-none">{user?.name}</p>
+                <p className="text-[10px] font-bold text-blue-400/60 uppercase tracking-widest mt-1">Explorateur en herbe</p>
+              </div>
+            </div>
+
+            <div className="h-8 w-px bg-white/5" />
+
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-yellow-500/10 border border-yellow-500/20">
+              <Coins className="w-4 h-4 text-yellow-500" />
+              <span className="text-sm font-black text-white tabular-nums">{user?.coins || 0}</span>
+            </div>
+
+            <Button 
+              onClick={() => navigate('/spectate')} 
+              className="bg-emerald-500 text-white hover:bg-emerald-600 font-black text-xs px-4 h-9 rounded-xl shadow-lg shadow-emerald-500/20"
+            >
+              <Eye className="w-3.5 h-3.5 mr-2" /> {t('landing.watch_live') || 'Regarder le Live'}
+            </Button>
+          </div>
+
+          <div className="flex items-center gap-3">
             <LanguageSwitcher />
             {user?.is_admin && (
-              <Button onClick={() => navigate('/admin')} className="glass-dark border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10">
-                <Shield className="w-4 h-4 mr-2" />Admin
-              </Button>
+              <button 
+                onClick={() => navigate('/admin')} 
+                className="p-2 rounded-xl bg-white/5 text-yellow-400 hover:bg-white/10 border border-white/5 transition-all"
+                title="Admin Panel"
+              >
+                <Shield className="w-5 h-5" />
+              </button>
             )}
-            <Button onClick={handleLogout} variant="ghost" className="text-blue-300 hover:text-white hover:bg-white/5">
-              <LogOut className="w-4 h-4 mr-2" />{t('dashboard.logout')}
-            </Button>
+            <button 
+              onClick={handleLogout} 
+              className="p-2 rounded-xl bg-white/5 text-red-400 hover:bg-white/10 border border-white/5 transition-all"
+              title={t('dashboard.logout')}
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="relative z-10 container mx-auto px-6 pt-12">
+        <div className="flex flex-col md:flex-row gap-6 mb-12 items-start md:items-center justify-between">
+          <div>
+            <h1 className="text-4xl font-black text-white mb-2 tracking-tight">Dueloo <span className="text-gradient">Exploration</span></h1>
+            <p className="text-blue-100/40 font-medium">Choisissez votre prochain défi parmi plus de 90 modes de jeu.</p>
+          </div>
+
+          <div className="relative w-full md:w-72 glass-dark rounded-2xl p-1.5">
+            <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 text-blue-400/50" />
+            <Input 
+              placeholder={t('common.search') || "Rechercher un jeu..."}
+              className="bg-transparent border-none text-white pl-12 h-10 placeholder:text-blue-100/30 font-medium focus-visible:ring-0 focus-visible:ring-offset-0"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
           </div>
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-8 mb-12">
-          {/* User Profile Card */}
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="lg:col-span-2">
-            <Card className="p-8 glass h-full">
-              <div className="flex flex-col md:flex-row items-center gap-8 mb-8">
-                <div className="relative group">
-                  <div className="absolute inset-0 bg-yellow-500 blur-xl opacity-20 group-hover:opacity-40 transition-opacity" />
-                  <img src={user?.picture || 'https://via.placeholder.com/120'} alt={user?.name} className="relative w-32 h-32 rounded-3xl border-4 border-white/10 object-cover shadow-2xl" />
-                  {user?.is_premium && (
-                    <div className="absolute -top-3 -right-3 w-10 h-10 bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-xl flex items-center justify-center shadow-lg transform rotate-12">
-                      <Crown className="w-6 h-6 text-black" />
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1 text-center md:text-left">
-                  <h2 className="text-4xl font-black text-white mb-2 leading-none">{user?.name}</h2>
-                  <div className="flex flex-wrap justify-center md:justify-start items-center gap-4 text-blue-200">
-                    <span className="flex items-center gap-2 px-3 py-1 rounded-lg glass-dark text-yellow-400 font-bold">
-                      <Trophy className="w-5 h-5" /> {t('dashboard.level')} {user?.level}
-                    </span>
-                    <span className="text-blue-100/60 font-medium tracking-wide uppercase text-xs">Apostre en devenir</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mb-8">
-                <div className="flex justify-between text-sm font-bold text-blue-200/60 mb-3 uppercase tracking-wider">
-                  <span>{t('dashboard.progression')}</span>
-                  <span className="text-blue-100">{user?.xp} / {xpForNextLevel} XP</span>
-                </div>
-                <div className="h-4 bg-white/5 rounded-full overflow-hidden p-1 border border-white/5">
-                  <motion.div 
-                    initial={{ width: 0 }}
-                    animate={{ width: `${xpProgress}%` }}
-                    className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full shadow-[0_0_15px_rgba(59,130,246,0.5)]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-6">
-                <div className="glass-dark p-5 rounded-2xl border-white/5 text-center group hover:bg-white/10 transition-all">
-                  <Heart className="w-8 h-8 text-red-500 mx-auto mb-2 drop-shadow-[0_0_8px_rgba(239,68,68,0.4)] transform group-hover:scale-110 transition-transform" />
-                  <div className="text-3xl font-black text-white">{user?.lives}</div>
-                  <div className="text-xs font-bold text-blue-200/40 uppercase tracking-widest">{t('dashboard.lives')}</div>
-                </div>
-                <div className="glass-dark p-5 rounded-2xl border-white/5 text-center group hover:bg-white/10 transition-all">
-                  <Coins className="w-8 h-8 text-yellow-500 mx-auto mb-2 drop-shadow-[0_0_8px_rgba(234,179,8,0.4)] transform group-hover:scale-110 transition-transform" />
-                  <div className="text-3xl font-black text-white">{user?.coins}</div>
-                  <div className="text-xs font-bold text-blue-200/40 uppercase tracking-widest">{t('dashboard.coins')}</div>
-                </div>
-                <div className="glass-dark p-5 rounded-2xl border-white/5 text-center group hover:bg-white/10 transition-all">
-                  <Zap className="w-8 h-8 text-purple-500 mx-auto mb-2 drop-shadow-[0_0_8px_rgba(168,85,247,0.4)] transform group-hover:scale-110 transition-transform" />
-                  <div className="text-3xl font-black text-white">{dailyMannaStatus.streak}</div>
-                  <div className="text-xs font-bold text-blue-200/40 uppercase tracking-widest">{t('dashboard.streak')}</div>
-                </div>
-              </div>
-            </Card>
-          </motion.div>
-
-          {/* Featured Action Card */}
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-            <Card className="p-8 bg-gradient-to-br from-indigo-600 to-blue-700 h-full border-none shadow-[0_20px_50px_rgba(30,58,138,0.3)] relative overflow-hidden group">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl transform translate-x-32 -translate-y-32" />
-              <div className="relative z-10 flex flex-col h-full">
-                <div className="mb-auto">
-                  <Sparkles className="w-16 h-16 text-yellow-400 mb-6 drop-shadow-xl animate-bounce" />
-                  <h3 className="text-3xl font-black text-white mb-4 leading-none">{t('dashboard.all_modes')}</h3>
-                  <p className="text-blue-100 text-lg font-medium leading-relaxed opacity-90">{t('dashboard.all_modes_desc')}</p>
-                </div>
-                <Button 
-                  onClick={() => navigate('/games')} 
-                  className="w-full h-16 bg-white text-indigo-700 hover:bg-blue-50 font-black text-xl rounded-2xl mt-8 shadow-xl group-hover:scale-[1.02] active:scale-95 transition-all"
-                >
-                  {t('dashboard.discover')} <ChevronRight className="w-6 h-6 ml-2" />
-                </Button>
-              </div>
-            </Card>
-          </motion.div>
-        </div>
-
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-          {[
-            { title: t('dashboard.duo_mode'), desc: t('dashboard.duo_desc'), icon: '⚔️', path: '/duo', color: 'from-orange-500 to-red-600' },
-            { title: t('dashboard.group_mode'), desc: t('dashboard.group_desc'), icon: '👥', path: '/group', color: 'from-emerald-500 to-teal-600' },
-            { title: t('dashboard.leaderboard'), desc: t('dashboard.top_players'), icon: '🏆', path: '/leaderboard', color: 'from-blue-500 to-indigo-600' },
-            { title: t('dashboard.achievements'), desc: t('dashboard.rewards'), icon: '🏅', path: '/achievements', color: 'from-purple-500 to-pink-600' }
-          ].map((item, idx) => (
-            <motion.div 
-              key={idx}
-              initial={{ opacity: 0, scale: 0.9 }} 
-              animate={{ opacity: 1, scale: 1 }} 
-              transition={{ delay: 0.3 + idx * 0.1 }}
-            >
-              <Card 
-                onClick={() => navigate(item.path)} 
-                className="p-6 glass hover:bg-white/15 cursor-pointer transition-all duration-300 group h-full border-white/5"
-              >
-                <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${item.color} flex items-center justify-center text-3xl mb-4 shadow-lg group-hover:scale-110 transition-transform`}>
-                  {item.icon}
-                </div>
-                <h4 className="text-xl font-black text-white mb-2">{item.title}</h4>
-                <p className="text-blue-100/50 text-sm font-medium">{item.desc}</p>
-              </Card>
-            </motion.div>
-          ))}
-        </div>
-
-        {/* Badges Section */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
-          <Card className="p-8 glass border-white/5">
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="text-2xl font-black text-white flex items-center gap-3">
-                <Award className="w-8 h-8 text-yellow-500" />{t('dashboard.your_badges')}
-              </h3>
-              <Button variant="ghost" className="text-blue-300 font-bold hover:text-white" onClick={() => navigate('/achievements')}>
-                Voir plus <ChevronRight className="w-4 h-4 ml-1" />
-              </Button>
-            </div>
-            {badges.length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-4 text-center">
-                {badges.map((badge, index) => (
-                  <motion.div 
-                    key={badge.badge_id} 
-                    initial={{ opacity: 0, scale: 0.5 }} 
-                    animate={{ opacity: 1, scale: 1 }} 
-                    transition={{ delay: 0.6 + index * 0.05 }} 
-                    className="p-4 rounded-2xl glass-dark border-white/5 group hover:bg-white/10 transition-all cursor-help"
-                    title={badge.description}
+        <Tabs defaultValue="all" className="w-full mb-12" onValueChange={setSelectedCategory}>
+          <div className="overflow-x-auto pb-2 scrollbar-hide">
+            <div className="glass-dark p-1.5 rounded-2xl inline-flex min-w-max border border-white/5">
+              <TabsList className="bg-transparent gap-2 flex-nowrap">
+                {['all', 'Quiz et Tests', 'Jeux de Mots', 'Strategie et Plateau', 'Cartes', 'Arcade et Action', 'Éducatif', 'Rapidité', 'Logique', 'Défis Flash'].map((cat) => (
+                  <TabsTrigger 
+                    key={cat} 
+                    value={cat} 
+                    className="rounded-xl px-4 py-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-600 data-[state=active]:to-indigo-600 data-[state=active]:text-white transition-all text-blue-100/60 whitespace-nowrap text-xs font-black uppercase tracking-widest"
                   >
-                    <div className="text-4xl mb-2 drop-shadow-md group-hover:scale-125 transition-transform duration-300">{badge.icon}</div>
-                    <div className="text-white font-black text-[10px] uppercase tracking-tighter leading-tight">{badge.name}</div>
-                  </motion.div>
+                    {cat === 'all' ? t('games.all') : cat}
+                  </TabsTrigger>
                 ))}
-              </div>
-            ) : (
-              <div className="text-center py-16 glass-dark rounded-3xl border-dashed border-white/10">
-                <Sparkles className="w-16 h-16 text-yellow-500/20 mx-auto mb-4" />
-                <p className="text-blue-200/50 font-bold">{t('dashboard.play_to_unlock')}</p>
-              </div>
-            )}
-          </Card>
-        </motion.div>
-      </div>
+              </TabsList>
+            </div>
+          </div>
+        </Tabs>
 
-      {showDailyManna && <DailyMannaModal onClose={() => setShowDailyManna(false)} onComplete={fetchUserData} />}
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          <AnimatePresence mode="popLayout">
+            {filteredModes.map((mode, index) => (
+              <motion.div
+                key={mode.mode_id}
+                layout
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ duration: 0.3, delay: index * 0.05 }}
+              >
+                <Card className={`group relative p-6 glass hover:bg-white/10 hover:translate-y-[-4px] border-white/5 transition-all duration-500 h-full flex flex-col overflow-hidden ${
+                  !mode.available && 'opacity-60 grayscale'
+                }`}>
+                  <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${mode.color} opacity-0 group-hover:opacity-10 blur-2xl transition-opacity`} />
+                  
+                  <div className="flex items-start justify-between mb-6 relative z-10">
+                    <div className={`text-3xl w-14 h-14 rounded-2xl bg-gradient-to-br ${mode.color} flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform duration-300`}>
+                      <span className="drop-shadow-md">{mode.icon}</span>
+                    </div>
+                    {!mode.available ? (
+                      <div className="glass p-2 rounded-xl"><Lock className="w-4 h-4 text-yellow-400" /></div>
+                    ) : (
+                      <div className="glass p-2 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity"><Zap className="w-4 h-4 text-blue-400" /></div>
+                    )}
+                  </div>
+
+                  <h3 className="text-xl font-black text-white mb-2 group-hover:text-blue-100 transition-colors relative z-10">
+                    {mode.name}
+                  </h3>
+
+                  <p className="text-xs text-blue-100/50 mb-6 flex-grow leading-relaxed font-medium relative z-10 line-clamp-2">
+                    {mode.description}
+                  </p>
+
+                  <div className="flex items-center justify-between text-[10px] text-blue-200/80 mb-6 relative z-10 font-black uppercase tracking-widest">
+                    <span className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/5">
+                      {mode.difficulty}
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-blue-400" />
+                      {mode.duration_minutes} min
+                    </span>
+                  </div>
+
+                  <Button
+                    onClick={() => mode.available && startGame(mode.mode_id)}
+                    disabled={!mode.available}
+                    className={`w-full h-12 rounded-xl font-black text-sm shadow-xl relative z-10 transition-all duration-300 
+                      ${mode.available 
+                        ? `bg-gradient-to-br ${mode.color} hover:brightness-110 active:scale-95 text-white` 
+                        : 'bg-white/5 text-white/20'}`}
+                  >
+                    {mode.available ? (
+                      <span className="flex items-center gap-2">
+                        <Play className="fill-current w-4 h-4" /> Jouer
+                      </span>
+                    ) : (
+                      'Bientôt'
+                    )}
+                  </Button>
+                </Card>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+
+        {filteredModes.length === 0 && (
+          <div className="text-center py-32 glass rounded-3xl mt-12">
+            <Search className="w-16 h-16 text-blue-200/10 mx-auto mb-4" />
+            <p className="text-blue-200/40 text-xl font-bold">Aucun mode de jeu trouvé</p>
+          </div>
+        )}
+      </main>
     </div>
   );
 };

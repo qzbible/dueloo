@@ -97,7 +97,7 @@ const Premium = () => {
             Accès Premium
           </h1>
           <p className="text-lg text-blue-200 max-w-2xl mx-auto" style={{ fontFamily: 'Manrope, sans-serif' }}>
-            Débloquez tout le potentiel de BibleQuest avec nos pass horaires
+            Débloquez tout le potentiel de Dueloo avec nos pass horaires
           </p>
         </motion.div>
 

@@ -3,7 +3,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const TicTacToe = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
+const TicTacToe = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator = false }) => {
   const [board, setBoard] = useState(Array(9).fill(null));
   const [isXNext, setIsXNext] = useState(true);
   const [winner, setWinner] = useState(null);
@@ -104,7 +104,7 @@ const TicTacToe = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
     const isMyTurn = !duelMode || (bothReady && (duelMode.role === 'player1' ? isXNext : !isXNext));
     const mySymbol = duelMode ? (duelMode.role === 'player1' ? 'X' : 'O') : 'X';
 
-    if (winner || board[i] || !isMyTurn) return;
+    if (winner || board[i] || !isMyTurn || isSpectator) return;
     
     const newBoard = [...board];
     newBoard[i] = mySymbol;
@@ -139,6 +139,8 @@ const TicTacToe = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
             duelMode ? (
                 !bothReady ? "Attente de la connexion de l'adversaire..." :
                 ((duelMode.role === 'player1' ? isXNext : !isXNext) ? "À vous de jouer !" : "Attente de l'adversaire...")
+            ) : isSpectator ? (
+                `Vue Spectateur — ${isXNext ? 'X' : 'O'} joue`
             ) : (
                 isXNext ? "À vous de jouer (X)" : "L'IA réfléchit (O)..."
             )

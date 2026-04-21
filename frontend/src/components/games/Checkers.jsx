@@ -65,7 +65,15 @@ const Checkers = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
     if (!move) return;
 
     if (duelMode) {
-      onMove({ type: 'move', from: selected, to: { r: nr, c: nc }, move });
+      let newBoard = board.map(row => [...row]);
+      const piece = newBoard[selected.r][selected.c];
+      newBoard[nr][nc] = piece;
+      newBoard[selected.r][selected.c] = null;
+      if (move.capture) newBoard[move.capture.r][move.capture.c] = null;
+      if (nr === 0 && piece.color === 'B') piece.king = true;
+      if (nr === 7 && piece.color === 'W') piece.king = true;
+
+      onMove({ type: 'move', from: selected, to: { r: nr, c: nc }, move, boardState: newBoard, turnState: piece.color === 'B' ? 'W' : 'B' });
     }
 
     applyMove(selected, { r: nr, c: nc }, move);
@@ -74,6 +82,8 @@ const Checkers = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
   const applyMove = (from, to, move) => {
     let newBoard = board.map(row => [...row]);
     const piece = newBoard[from.r][from.c];
+    if (!piece) return;
+
     newBoard[to.r][to.c] = piece;
     newBoard[from.r][from.c] = null;
 
@@ -132,6 +142,12 @@ const Checkers = ({ onSubmit, duelMode, opponentMove, onMove, bothReady }) => {
 
   useEffect(() => {
     if (duelMode && opponentMove && opponentMove.type === 'move') {
+      if (opponentMove.boardState) {
+        setBoard(opponentMove.boardState);
+        if (opponentMove.turnState) setTurn(opponentMove.turnState);
+        checkEnd(opponentMove.boardState);
+        return;
+      }
       const { from, to, move } = opponentMove;
       applyMove(from, to, move);
     }
