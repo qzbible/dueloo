@@ -1,0 +1,4 @@
+---
+backend_app_hostname: dev-backend.dueloo.dikotech.com
+front_app_hostname: dev-app.dueloo.dikotech.com
+admin_app_hostname: dev-admin.dueloo.dikotech.com

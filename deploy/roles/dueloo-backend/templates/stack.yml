@@ -1,0 +1,153 @@
+# Stack Docker Swarm pour Dueloo Backend avec MongoDB Dockerisé
+version: "3.8"
+
+services:
+  nginx:
+    image: nginx:1.21.5-alpine
+    configs:
+      - source: "{{ nginx_config_name }}"
+        target: /etc/nginx/conf.d/default.conf
+        mode: 0440
+    networks:
+      - dueloo
+      - "{{ traefik_network }}"
+    volumes:
+      - static_data:/app/static
+      - media:/app/media
+    
+    deploy:
+      mode: replicated
+      replicas: 1
+      update_config:
+        order: start-first
+        parallelism: 1
+        failure_action: rollback
+      rollback_config:
+        order: start-first
+        parallelism: 1
+      restart_policy:
+        condition: on-failure
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - traefik.enable=true
+        - traefik.constraint-label=traefik-public
+        # Http router: redirection to https
+        - traefik.http.routers.{{ env }}-nginx-dueloo_backend-http.rule=Host(`{{ hostname }}`)
+        - traefik.http.routers.{{ env }}-nginx-dueloo_backend-http.entrypoints=http
+        - traefik.http.routers.{{ env }}-nginx-dueloo_backend-http.middlewares=https-redirect
+        # Https router
+        - traefik.http.routers.{{ env }}-nginx-dueloo_backend-https.rule=Host(`{{ hostname }}`)
+        - traefik.http.routers.{{ env }}-nginx-dueloo_backend-https.entrypoints=https
+        - traefik.http.routers.{{ env }}-nginx-dueloo_backend-https.tls=true
+        - traefik.http.routers.{{ env }}-nginx-dueloo_backend-https.tls.certresolver=letsencrypt
+        # Pointing to nginx
+        - traefik.http.services.{{ env }}-nginx-dueloo_backend.loadbalancer.server.port=80
+
+  api:
+    image: "{{ image }}"  
+    networks:
+      - dueloo
+    env_file:
+      - ./.flask.env
+      - ./.mongo.env
+    environment:
+      - MONGO_URL=mongodb://db:27017/
+      - DB_NAME=dueloo_db
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - media:/app/media
+      - static_data:/app/static
+    deploy:
+      mode: replicated
+      replicas: 1
+      update_config:
+        order: start-first
+        parallelism: 1
+        failure_action: rollback
+      rollback_config:
+        order: start-first
+        parallelism: 1
+      restart_policy:
+        condition: on-failure
+      labels:
+        - traefik.enable=false
+      placement:
+        constraints:
+          - node.role == manager
+
+  worker:
+    image: "{{ image }}"
+    command: celery -A celery_app worker --loglevel=info
+    networks:
+      - dueloo
+    env_file:
+      - ./.flask.env
+      - ./.mongo.env
+    environment:
+      - MONGO_URL=mongodb://db:27017/
+      - DB_NAME=dueloo_db
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - media:/app/media
+      - static_data:/app/static
+    deploy:
+      mode: replicated
+      replicas: 1
+      update_config:
+        order: start-first
+        parallelism: 1
+        failure_action: rollback
+      rollback_config:
+        order: start-first
+        parallelism: 1
+      restart_policy:
+        condition: on-failure
+      placement:
+        constraints:
+          - node.role == manager
+
+  redis:
+    image: redis:7-alpine
+    networks:
+      - dueloo
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
+  db:
+    image: mongo:7
+    networks:
+      - dueloo
+    volumes:
+      - db_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
+volumes: 
+  media:
+  db_data:
+  static_data:
+
+networks:
+  dueloo:
+    name: "{{ env }}-dueloo-backend"
+  "{{ traefik_network }}":
+    external: true
+
+configs:
+  "{{ nginx_config_name }}":
+    external: true

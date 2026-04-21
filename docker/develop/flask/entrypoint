@@ -1,0 +1,20 @@
+#!/bin/bash
+
+set -o errexit
+set -o pipefail
+set -o nounset
+ 
+#  check if mongodb is disponible
+echo "Starting Flask application setup... "
+# flask db downgrade 1d679b98d407
+# Run database migrations
+echo "Running database initialization and seeding..."
+python3 scripts/seed_db.py || echo "Warning: Seeding failed, but continuing..."
+
+echo "Flask application starting..."
+
+# Start FastAPI application with uvicorn
+exec uvicorn server:app --host 0.0.0.0 --port "${flask_listening_port:-5001}"
+
+exec "$@"
+

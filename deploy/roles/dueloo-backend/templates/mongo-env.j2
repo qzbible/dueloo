@@ -1,0 +1,4 @@
+MONGO_URL=mongodb://{{ dueloo_backend_db_user }}:{{ dueloo_backend_db_password }}@db:27017/{{ dueloo_backend_db_name }}?authSource=admin
+DB_NAME={{ dueloo_backend_db_name }}
+
+JWT_SECRET_KEY={{ dueloo_backend_flask_secret_key }}

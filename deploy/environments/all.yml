@@ -1,0 +1,13 @@
+---
+# Global vars
+traefik_network: traefik-public
+
+# DB settings
+dueloo_backend_db_host: "{{ vault_db_host }}"
+dueloo_backend_db_name: "{{ vault_db_name }}"
+dueloo_backend_db_user: "{{ vault_db_user }}"
+dueloo_backend_db_password: "{{ vault_db_password }}"
+dueloo_backend_db_port: "{{ vault_db_port }}"
+
+# Flask settings
+dueloo_backend_flask_secret_key: "{{ vault_flask_secret_key }}"

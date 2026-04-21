@@ -1,0 +1,26 @@
+---
+- name: Deploy Backend
+  hosts: gcp_manager_sam
+  vars_files:
+    - environments/all.yml
+    - environments/{{ env }}/vars.yml
+    - environments/{{ env }}/vault
+
+  roles:
+    - { role: dueloo-backend, 
+        stack_name: "{{ env }}-dueloo-backend", 
+        dest_folder: "/apps", 
+        hostname: "{{ backend_app_hostname }}", 
+        tags: ["backend"] }
+    
+    - { role: dueloo-frontend, 
+        stack_name: "{{ env }}-dueloo-frontend", 
+        dest_folder: "/apps", 
+        hostname: "{{ front_app_hostname }}", 
+        tags: ["frontend"] }
+
+    - { role: dueloo-admin, 
+        stack_name: "{{ env }}-dueloo-admin", 
+        dest_folder: "/apps", 
+        hostname: "{{ admin_app_hostname }}", 
+        tags: ["admin"] }

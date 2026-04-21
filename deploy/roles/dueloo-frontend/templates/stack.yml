@@ -1,0 +1,44 @@
+# stack.yml for Dueloo Frontend
+version: "3.8"
+
+services:
+  app:
+    image: "{{ image }}"
+    networks:
+      - dueloo
+      - "{{ traefik_network }}"
+    deploy:
+      mode: replicated
+      replicas: 1
+      update_config:
+        order: start-first
+        parallelism: 1
+        failure_action: rollback
+      rollback_config:
+        order: start-first
+        parallelism: 1
+      restart_policy:
+        condition: on-failure
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - traefik.enable=true
+        - traefik.constraint-label=traefik-public
+        # Http router: redirection to https
+        - traefik.http.routers.{{ env }}-dueloo_frontend-http.rule=Host(`{{ hostname }}`)
+        - traefik.http.routers.{{ env }}-dueloo_frontend-http.entrypoints=http
+        - traefik.http.routers.{{ env }}-dueloo_frontend-http.middlewares=https-redirect
+        # Https router
+        - traefik.http.routers.{{ env }}-dueloo_frontend-https.rule=Host(`{{ hostname }}`)
+        - traefik.http.routers.{{ env }}-dueloo_frontend-https.entrypoints=https
+        - traefik.http.routers.{{ env }}-dueloo_frontend-https.tls=true
+        - traefik.http.routers.{{ env }}-dueloo_frontend-https.tls.certresolver=letsencrypt
+        # Service port
+        - traefik.http.services.{{ env }}-dueloo_frontend.loadbalancer.server.port=80
+
+networks:
+  dueloo:
+    name: "{{ env }}-dueloo-frontend"
+  "{{ traefik_network }}":
+    external: true

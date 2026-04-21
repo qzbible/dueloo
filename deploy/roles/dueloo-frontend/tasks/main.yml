@@ -1,0 +1,57 @@
+---
+- name: Make sure the destination_folder exists
+  ansible.builtin.file:
+    path: "{{ final_dest_folder }}"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0764"
+  become: yes
+
+- name: Copy the docker stack file
+  ansible.builtin.template:
+    src: "stack.yml"
+    dest: "{{ final_dest_folder }}/stack.yml"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0764"
+  register: stack_file
+
+# Simple config generation for swarm compatibility
+- name: Generate the final stack file
+  ansible.builtin.command:
+    cmd: docker compose -f stack.yml config -o final-stack.yml
+    chdir: "{{ final_dest_folder }}"
+  changed_when: stack_file.changed
+
+- name: Make sure the final is compatible with docker swarm
+  ansible.builtin.command:
+    cmd: yq --inplace 'del(.name)' final-stack.yml
+    chdir: "{{ final_dest_folder }}"
+  changed_when: stack_file.changed
+
+- name: Deploy the stack
+  community.docker.docker_stack:
+    name: "{{ stack_name }}"
+    compose:
+      - "{{ final_dest_folder }}/final-stack.yml"
+    prune: true
+    state: present
+    resolve_image: always
+    with_registry_auth: true
+  register: stack_deploy
+
+- name: Wait for the deployment to finish
+  ansible.builtin.command:
+    cmd: docker-stack-wait -t 20 {{ stack_name }}
+    chdir: "{{ final_dest_folder }}"
+  register: wait_for_deploy
+  ignore_errors: true
+  changed_when: false
+  retries: 5
+  delay: 2
+
+- name: Fail if deployment fails
+  ansible.builtin.fail:
+    msg: "Frontend deployment failed."
+  when: wait_for_deploy.rc != 0

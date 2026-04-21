@@ -1,0 +1,36 @@
+flask_listening_port="{{ flask_listening_port }}"
+
+SECRET_KEY="{{ dueloo_backend_flask_secret_key }}"
+
+ 
+FLASK_ENV=production
+
+FLASK_APP=run.py
+
+
+BASE_URL = {{ backend_app_hostname }} # Ajuster selon l'environnement 
+ 
+
+# Clés secrètes
+ 
+JWT_SECRET_KEY=your_jwt_secret_key
+
+# MongoDB
+ 
+  # Email principal utilisé pour l'envoi
+EMAIL_HOST_USER=qzbibleapp@gmail.com
+    #EMAIL_HOST_PASSWORD=jdhikoiikytspdjg
+MAIL_SENDER=qzbibleapp@gmail.com
+EMAIL_HOST_PASSWORD=yvhysgygadwmmedj 
+
+# SMTP (Gmail)
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USE_TLS=True
+
+# CORS
+ALLOWED_ORIGINS=*
+
+# JWT Expiration
+JWT_ACCESS_TOKEN_EXPIRES=900
+JWT_REFRESH_TOKEN_EXPIRES=2592000
