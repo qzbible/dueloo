@@ -42,7 +42,7 @@
 
 - name: Wait for the deployment to finish
   ansible.builtin.command:
-    cmd: docker-stack-wait -t 20 {{ stack_name }}
+    cmd: docker-stack-wait -t 120 {{ stack_name }}
     chdir: "{{ final_dest_folder }}"
   register: wait_for_deploy
   ignore_errors: true
