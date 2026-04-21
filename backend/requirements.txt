@@ -128,3 +128,4 @@ yarl==1.23.0
 zipp==3.23.0
 redis==5.3.1
 fakeredis==2.27.0
+openpyxl==3.1.5

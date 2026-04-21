@@ -119,6 +119,9 @@ services:
     image: mongo:7
     networks:
       - dueloo
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME={{ dueloo_backend_db_user }}
+      - MONGO_INITDB_ROOT_PASSWORD={{ dueloo_backend_db_password }}
     volumes:
       - db_data:/data/db
     healthcheck:

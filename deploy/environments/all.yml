@@ -1,6 +1,7 @@
 ---
 # Global vars
 traefik_network: traefik-public
+flask_listening_port: 5001
 
 # DB settings
 dueloo_backend_db_host: "{{ vault_db_host }}"
