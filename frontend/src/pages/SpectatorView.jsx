@@ -166,29 +166,29 @@ const SpectatorView = ({ matchId, initialData, isActive = true }) => {
       onClick={() => window.dispatchEvent(new CustomEvent('unlock_audio'))}
     >
       {/* --- Header (Mobile only, hidden on Large) --- */}
-      <header className="lg:hidden p-4 flex items-center justify-between border-b border-white/5 bg-slate-900/50 backdrop-blur-md z-30">
-        <Button variant="ghost" onClick={() => navigate(-1)} size="icon" className="hover:bg-white/10">
+      <header className="lg:hidden p-2 sm:p-4 pr-14 sm:pr-16 flex items-center justify-between border-b border-white/5 bg-slate-900/50 backdrop-blur-md z-30 gap-2">
+        <Button variant="ghost" onClick={() => navigate(-1)} size="icon" className="shrink-0 hover:bg-white/10">
           <ArrowLeft className="w-5 h-5 text-slate-300" />
         </Button>
-        <div className="text-center">
-          <h1 className="text-sm font-black tracking-tight uppercase text-blue-100">
-            {matchData.player1_name || 'J1'} <span className="text-slate-500 mx-1">vs</span> {matchData.player2_name || 'J2'}
+        <div className="text-center min-w-0 flex-1">
+          <h1 className="text-[11px] sm:text-sm font-black tracking-tight uppercase text-blue-100 truncate">
+            {matchData.player1_name?.split(' ')[0] || 'J1'} <span className="text-slate-500 mx-1">vs</span> {matchData.player2_name?.split(' ')[0] || 'J2'}
           </h1>
-          <div className="flex items-center justify-center gap-1.5 mt-0.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-            <span className="text-[10px] font-bold text-red-400 tracking-widest uppercase">Live Spectator</span>
+          <div className="flex items-center justify-center gap-1 mt-0.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />
+            <span className="text-[9px] sm:text-[10px] font-bold text-red-400 tracking-widest uppercase truncate">Live Spectator</span>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
            <VoiceChat 
              socket={socketRef.current} 
              matchId={matchId} 
              role="spectator" 
              userId={user?.user_id || 'guest'} 
            />
-           <div className="flex items-center gap-1.5 bg-blue-500/10 px-2 py-1.5 rounded-lg border border-blue-500/20">
-              <Eye className="w-4 h-4 text-blue-400" />
-              <span className="text-xs font-black text-blue-100">{spectatorCount}</span>
+           <div className="flex items-center gap-1 bg-blue-500/10 px-1.5 sm:px-2 py-1 rounded-lg border border-blue-500/20">
+              <Eye className="w-3 h-3 sm:w-4 h-4 text-blue-400" />
+              <span className="text-[10px] sm:text-xs font-black text-blue-100">{spectatorCount}</span>
            </div>
         </div>
       </header>
