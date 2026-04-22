@@ -133,7 +133,7 @@ const UsersAdmin = () => {
   const handleAction = async (userId, type, value) => {
     try {
       const token = localStorage.getItem('adminToken');
-      const endpoint = type === 'status' ? `/api/admin/users/${userId}/status` : `/api/admin/users/${userId}/role`;
+      const endpoint = type === 'status' ? `${BACKEND_URL}/api/admin/users/${userId}/status` : `${BACKEND_URL}/api/admin/users/${userId}/role`;
       const payload = type === 'status' ? { status: value } : { role: value };
 
       await axios.patch(endpoint, payload, {
