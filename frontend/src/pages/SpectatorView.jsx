@@ -153,7 +153,11 @@ const SpectatorView = ({ matchId, initialData, isActive = true }) => {
     const GameComponent = gameComponents[matchData.mode_id?.toLowerCase()];
     
     if (GameComponent) {
-      return <GameComponent {...props} />;
+      return (
+        <React.Suspense fallback={<div className="text-white animate-pulse">Chargement du plateau...</div>}>
+          <GameComponent {...props} />
+        </React.Suspense>
+      );
     }
 
     return <div className="text-white">Jeu non supporté en spectateur ({matchData.mode_id})</div>;
