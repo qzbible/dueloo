@@ -67,7 +67,7 @@ const Checkers = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpect
   const mandatoryPieces = isMyTurn ? getMandatoryCaptures(board, myColor) : [];
 
   const selectPiece = (r, c) => {
-    if (winner || !isMyTurn || board[r][c]?.color !== myColor) return;
+    if (isSpectator || winner || !isMyTurn || board[r][c]?.color !== myColor) return;
     
     // Prevent selecting another piece if a combo is active
     if (comboPiece && (r !== comboPiece.r || c !== comboPiece.c)) return;
@@ -86,6 +86,7 @@ const Checkers = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpect
   };
 
   const handleSquareClick = (nr, nc) => {
+    if (isSpectator) return;
     const isValid = validMoves.some(m => m.r === nr && m.c === nc);
     if (isValid) {
       const move = validMoves.find(m => m.r === nr && m.c === nc);
@@ -263,7 +264,7 @@ const Checkers = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpect
       </div>
 
       <Card className={`p-1 sm:p-2 bg-[#5c3a21] shadow-2xl border-2 sm:border-4 border-[#3e2513] ${isSpectator ? 'w-full max-w-[min(100%,480px)] aspect-square self-center mt-auto mb-auto' : 'aspect-square w-full max-w-[min(90vw,500px)] lg:max-w-none'} mx-auto overflow-hidden`}>
-        <div className="grid grid-cols-8 grid-rows-8 h-full rounded-sm overflow-hidden">
+        <div className={`grid grid-cols-8 grid-rows-8 h-full rounded-sm overflow-hidden ${isSpectator ? 'pointer-events-none' : ''}`}>
           {board.map((row, r) => row.map((cell, c) => {
             const isValid = validMoves.some(m => m.r === r && m.c === c);
             const isSelected = selected?.r === r && selected?.c === c;
