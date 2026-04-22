@@ -197,7 +197,8 @@ const GamePlay = () => {
 
     socketRef.current.on('player_rejoined', (data) => {
       console.log(`Opponent rejoined: ${data.role}`);
-      setVoiceChatKey(prev => prev + 1);
+      // Removed setVoiceChatKey() here to prevent aggressive WebRTC tear-down
+      // when the opponent's connection flaps (e.g. falling back to polling).
     });
   };
 
