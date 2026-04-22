@@ -811,7 +811,13 @@ async def webrtc_ready(sid, data):
     ready_players = [v for v in room_data.values() if v.get("webrtc_ready")]
     print(f"WebRTC ready: {len(ready_players)}/2 players ready in {match_id}")
     if len(ready_players) >= 2:
-        await sio.emit("start_webrtc", {"match_id": match_id}, room=match_id)
+        p1_sid = next((k for k, v in room_data.items() if v.get("role") == "player1"), None)
+        p2_sid = next((k for k, v in room_data.items() if v.get("role") == "player2"), None)
+        await sio.emit("start_webrtc", {
+            "match_id": match_id,
+            "player1_sid": p1_sid,
+            "player2_sid": p2_sid
+        }, room=match_id)
 
 @sio.event
 async def spectator_voice_ready(sid, data):

@@ -145,13 +145,18 @@ const VoiceChat = ({ socket, matchId, role, userId }) => {
       }
     };
 
-    const handleStartWebRTC = async () => {
+    const handleStartWebRTC = async (data) => {
       if (cancelled || role !== 'player1') return;
-      const pc = getOrCreatePC('player2', true); // P1 connects to P2
+      const p2Sid = data.player2_sid;
+      if (!p2Sid) {
+        console.error("Missing player2_sid in start_webrtc");
+        return;
+      }
+      const pc = getOrCreatePC(p2Sid, true); // P1 connects to P2 accurately
       try {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-        socket.emit('webrtc_offer', { match_id: matchId, offer, target_sid: null });
+        socket.emit('webrtc_offer', { match_id: matchId, offer, target_sid: p2Sid });
       } catch (err) { console.error("Offer creation error:", err); }
     };
 
