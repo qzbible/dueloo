@@ -904,19 +904,7 @@ logger = logging.getLogger(__name__)
 async def shutdown_db_client():
     client.close()
 
-@fastapi_app.on_event("startup")
-async def seed_initial_data():
-    # Seed questions
-    if await db.questions.count_documents({}) == 0:
-        sample_questions = [
-            {"question_id": f"q_{uuid.uuid4().hex[:8]}", "book": "Genèse", "chapter": 1, "text": "Combien de jours Dieu a-t-il pris pour créer le monde ?", "options": ["5 jours", "6 jours", "7 jours", "8 jours"], "correct_answer": 1, "difficulty": "facile"},
-            {"question_id": f"q_{uuid.uuid4().hex[:8]}", "book": "Genèse", "chapter": 1, "text": "Qu'a créé Dieu le premier jour ?", "options": ["Les animaux", "La lumière", "Les plantes", "L'homme"], "correct_answer": 1, "difficulty": "facile"},
-            {"question_id": f"q_{uuid.uuid4().hex[:8]}", "book": "Exode", "chapter": 20, "text": "Combien de commandements Dieu a-t-il donnés à Moïse ?", "options": ["5", "10", "12", "7"], "correct_answer": 1, "difficulty": "facile"},
-            {"question_id": f"q_{uuid.uuid4().hex[:8]}", "book": "Matthieu", "chapter": 5, "text": "Où Jésus a-t-il prononcé le Sermon sur la Montagne ?", "options": ["À Jérusalem", "Sur une montagne", "Au bord de la mer", "Dans le temple"], "correct_answer": 1, "difficulty": "moyen"},
-            {"question_id": f"q_{uuid.uuid4().hex[:8]}", "book": "Jean", "chapter": 3, "text": "Quel est le verset le plus célèbre de la Bible ?", "options": ["Psaume 23:1", "Jean 3:16", "Genèse 1:1", "Matthieu 6:9"], "correct_answer": 1, "difficulty": "facile"}
-        ]
-        await db.questions.insert_many(sample_questions)
-        logger.info(f"Seeded {len(sample_questions)} questions")
+# Seeding is now handled by backend/scripts/seed_db.py during container entrypoint
     
     # Seed badges (incl. polyglot)
     if await db.badges.count_documents({}) == 0:
