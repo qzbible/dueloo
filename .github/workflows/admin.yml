@@ -71,6 +71,20 @@ jobs:
 
       - name: Run Ansible
         working-directory: deploy
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+          GHCR_USERNAME: ${{ github.actor }}
         run: |
           ENV_NAME=${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
-          ansible-playbook -e env=$ENV_NAME -e image=${{ needs.build-admin.outputs.image-tag }} --tags admin deploy.yml
+          ansible-playbook \
+            -e env=$ENV_NAME \
+            -e image=${{ needs.build-admin.outputs.image-tag }} \
+            -e ghcr_username="$GHCR_USERNAME" \
+            -e ghcr_token="$GHCR_TOKEN" \
+            --tags admin deploy.yml
+            
+      # - name: Run Ansible
+      #   working-directory: deploy
+      #   run: |
+      #     ENV_NAME=${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+      #     ansible-playbook -e env=$ENV_NAME -e image=${{ needs.build-admin.outputs.image-tag }} --tags admin deploy.yml
