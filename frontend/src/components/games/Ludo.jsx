@@ -266,7 +266,6 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator
                       initial={false}
                       animate={{ top, left }}
                       transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-                      onClick={() => handleSquareClick(color, id)} // We map this wrapper below
                       className={`absolute w-[6.66%] h-[6.66%] p-[0.3rem] z-20`}
                    >
                      <div 
