@@ -72,6 +72,17 @@ jobs:
       - name: Run Ansible
         working-directory: deploy
         run: |
-          # Determine environment based on branch
           ENV_NAME=${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
-          ansible-playbook -e env=$ENV_NAME -e image=${{ needs.build-backend.outputs.image-tag }} --tags backend deploy.yml
+          ansible-playbook \
+            -e env=$ENV_NAME \
+            -e image=${{ needs.build-backend.outputs.image-tag }} \
+            -e ghcr_username=${{ github.actor }} \
+            -e ghcr_token=${{ secrets.GHCR_READ_TOKEN }} \
+            --tags backend deploy.yml
+            
+      # - name: Run Ansible
+      #   working-directory: deploy
+      #   run: |
+      #     # Determine environment based on branch
+      #     ENV_NAME=${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+      #     ansible-playbook -e env=$ENV_NAME -e image=${{ needs.build-backend.outputs.image-tag }} --tags backend deploy.yml

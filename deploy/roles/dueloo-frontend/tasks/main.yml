@@ -8,6 +8,14 @@
     mode: "0764"
   become: yes
 
+- name: Login to GHCR
+  community.docker.docker_login:
+    registry: ghcr.io
+    username: "{{ ghcr_username }}"
+    password: "{{ ghcr_token }}"
+    reauthorize: true
+  no_log: true
+
 - name: Copy the docker stack file
   ansible.builtin.template:
     src: "stack.yml"

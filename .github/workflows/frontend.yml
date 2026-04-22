@@ -73,4 +73,15 @@ jobs:
         working-directory: deploy
         run: |
           ENV_NAME=${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
-          ansible-playbook -e env=$ENV_NAME -e image=${{ needs.build-frontend.outputs.image-tag }} --tags frontend deploy.yml
+          ansible-playbook \
+            -e env=$ENV_NAME \
+            -e image=${{ needs.build-frontend.outputs.image-tag }} \
+            -e ghcr_username=${{ github.actor }} \
+            -e ghcr_token=${{ secrets.GHCR_READ_TOKEN }} \
+            --tags frontend deploy.yml
+            
+      # - name: Run Ansible
+      #   working-directory: deploy
+      #   run: |
+      #     ENV_NAME=${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+      #     ansible-playbook -e env=$ENV_NAME -e image=${{ needs.build-frontend.outputs.image-tag }} --tags frontend deploy.yml
