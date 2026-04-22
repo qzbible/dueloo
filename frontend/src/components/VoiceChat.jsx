@@ -64,12 +64,13 @@ const VoiceChat = ({ socket, matchId, role, userId }) => {
         const rStream = event.streams[0] || new MediaStream([event.track]);
         remoteStreamsRef.current.set(sid, rStream);
 
-        // Create or update audio element for this sid
         let audioEl = remoteAudioElementsRef.current.get(sid);
         if (!audioEl) {
-          audioEl = new Audio();
+          audioEl = document.createElement('audio');
           audioEl.autoplay = true;
-          audioEl.playsInline = true;
+          audioEl.playsInline = true; // Crucial for iOS Safari
+          audioEl.style.display = 'none';
+          document.body.appendChild(audioEl); // Must be in DOM for iOS Safari to honor it reliably
           remoteAudioElementsRef.current.set(sid, audioEl);
         }
         audioEl.srcObject = rStream;
