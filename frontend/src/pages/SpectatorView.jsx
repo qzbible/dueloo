@@ -358,7 +358,7 @@ const FloatingReaction = ({ type }) => {
   return (
     <>
       {[...Array(3)].map((_, i) => {
-        const duration = Math.random() * 3 + 4; // 4s to 7s (Très doux)
+        const duration = Math.random() * 4 + 7; // 7s to 11s (Encore plus doux et flottant)
         const delay = Math.random() * 0.4; // Staggered spawn
         const driftX = (Math.random() - 0.5) * 15; // Delicate drift on X axis
         const rot = Math.random() * 90 - 45; 
@@ -400,9 +400,10 @@ const CommentStream = ({ comments, commentsEndRef, compact = false }) => (
           exit={{ opacity: 0, transition: { duration: 0.2 } }}
           className="flex flex-col items-start gap-1 max-w-[95%] pointer-events-auto"
         >
-          <div className={`flex items-start gap-2 px-3 py-1.5 backdrop-blur-2xl border border-white/10 shadow-xl ${
+          <div className={`flex flex-col gap-0.5 px-3 py-1.5 backdrop-blur-2xl border border-white/10 shadow-xl ${
             compact ? 'bg-black/40 rounded-xl rounded-bl-none' : 'bg-white/5 rounded-2xl rounded-bl-none'
           }`}>
+            {c.user_name && <span className="text-[10px] sm:text-[11px] font-black text-blue-300/90 tracking-tight">{c.user_name}</span>}
             <p className={`${compact ? 'text-xs' : 'text-sm'} text-white/90 font-medium leading-tight`}>{c.text}</p>
           </div>
         </motion.div>
