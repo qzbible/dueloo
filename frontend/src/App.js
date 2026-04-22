@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom';
+import axios from 'axios';
 import { Toaster } from '@/components/ui/sonner';
 import '@/App.css';
 
@@ -25,6 +26,8 @@ import Tournaments from '@/pages/Tournaments';
 import SpectatorFeed from '@/pages/Spectator';
 import Admin from '@/pages/Admin';
 import { useAuthStore } from '@/stores/authStore';
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuthStore();
@@ -101,6 +104,21 @@ function AppRouter() {
 }
 
 function App() {
+  const { setUser, setLoading } = useAuthStore();
+
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        const response = await axios.get(`${BACKEND_URL}/api/auth/me`, { withCredentials: true });
+        setUser(response.data);
+      } catch (error) {
+        console.log('No active session');
+        setLoading(false);
+      }
+    };
+    initAuth();
+  }, [setUser, setLoading]);
+
   return (
     <div className="App">
       <BrowserRouter>

@@ -26,7 +26,9 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { 
-    fetchUserData();
+    if (!user) {
+      fetchUserData();
+    }
     fetchGameModes();
 
     const socket = io(BACKEND_URL, { path: '/api/socket.io', transports: ['websocket'] });
