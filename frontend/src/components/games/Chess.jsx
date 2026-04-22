@@ -3,12 +3,12 @@ import { Card } from '@/components/ui/card';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const PIECES = {
-  P: { type: 'pawn', value: 1, icon: '♟' },
-  N: { type: 'knight', value: 3, icon: '♞' },
-  B: { type: 'bishop', value: 3, icon: '♝' },
-  R: { type: 'rook', value: 5, icon: '♜' },
-  Q: { type: 'queen', value: 9, icon: '♛' },
-  K: { type: 'king', value: 100, icon: '♚' }
+  P: { type: 'pawn', value: 1, icon: { w: '♙', b: '♟' } },
+  N: { type: 'knight', value: 3, icon: { w: '♘', b: '♞' } },
+  B: { type: 'bishop', value: 3, icon: { w: '♗', b: '♝' } },
+  R: { type: 'rook', value: 5, icon: { w: '♖', b: '♜' } },
+  Q: { type: 'queen', value: 9, icon: { w: '♕', b: '♛' } },
+  K: { type: 'king', value: 100, icon: { w: '♔', b: '♚' } }
 };
 
 const Chess = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator = false, playerNames }) => {
@@ -267,7 +267,7 @@ const Chess = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectato
                     animate={{ scale: 1 }}
                     className={cell.color === 'w' ? 'text-white drop-shadow-md' : 'text-black drop-shadow-sm'}
                   >
-                    {PIECES[cell.piece].icon}
+                    {PIECES[cell.piece].icon[cell.color]}
                   </motion.span>
                 )}
               </div>
