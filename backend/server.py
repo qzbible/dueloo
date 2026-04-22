@@ -889,10 +889,27 @@ async def update_game_mode(mode_id: str, request: Request, authorization: Option
 
     return {"mode_id": mode_id, "updates": updates, "message": "Mode mis à jour et diffusé en temps réel"}
 
+origins_raw = os.environ.get('CORS_ORIGINS', '')
+if not origins_raw or origins_raw == '*':
+    # Fallback to local and production domains if not set or set to *
+    # Credentials=True is incompatible with * in any case
+    allowed_origins = [
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "https://dev-app.dueloo.dikotech.com",
+        "https://dev-admin.dueloo.dikotech.com",
+        "https://dev-backend.dueloo.dikotech.com",
+        "https://app.dueloo.dikotech.com",
+        "https://admin.dueloo.dikotech.com",
+        "https://backend.dueloo.dikotech.com",
+    ]
+else:
+    allowed_origins = origins_raw.split(',')
+
 fastapi_app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
