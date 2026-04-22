@@ -187,7 +187,7 @@ const SpectatorView = ({ matchId, initialData, isActive = true }) => {
              userId={user?.user_id || 'guest'} 
            />
            <div className="flex items-center gap-1.5 bg-blue-500/10 px-2 py-1.5 rounded-lg border border-blue-500/20">
-              <Users className="w-4 h-4 text-blue-400" />
+              <Eye className="w-4 h-4 text-blue-400" />
               <span className="text-xs font-black text-blue-100">{spectatorCount}</span>
            </div>
         </div>
@@ -203,7 +203,7 @@ const SpectatorView = ({ matchId, initialData, isActive = true }) => {
              <h2 className="text-xs font-bold text-blue-400 uppercase tracking-widest">Match en cours</h2>
              <div className="flex items-center gap-2">
                <div className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-md border border-white/10" title="Spectateurs">
-                 <Users className="w-3 h-3 text-slate-400" />
+                 <Eye className="w-3 h-3 text-slate-400" />
                  <span className="text-[10px] font-bold text-slate-300">{spectatorCount}</span>
                </div>
                <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-red-500/10 border border-red-500/20">

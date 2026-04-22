@@ -7,7 +7,7 @@ import { io } from 'socket.io-client';
 import { useTranslation } from '@/hooks/useTranslation';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { ArrowLeft, Trophy, Copy } from 'lucide-react';
+import { ArrowLeft, Trophy, Copy, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 
 import QuiADitQuoi from '@/components/games/QuiADitQuoi';
@@ -64,6 +64,7 @@ const GamePlay = () => {
   const [opponentMove, setOpponentMove] = useState(null);
   const [bothReady, setBothReady] = useState(false);
   const [voiceChatKey, setVoiceChatKey] = useState(0);
+  const [spectatorCount, setSpectatorCount] = useState(0);
 
   useEffect(() => {
     initGame();
@@ -200,6 +201,10 @@ const GamePlay = () => {
       console.log(`Opponent rejoined: ${data.role}`);
       // Removed setVoiceChatKey() here to prevent aggressive WebRTC tear-down
       // when the opponent's connection flaps (e.g. falling back to polling).
+    });
+
+    socketRef.current.on('spectator_count', (data) => {
+      setSpectatorCount(data.count);
     });
   };
 
@@ -420,18 +425,24 @@ const GamePlay = () => {
           </Button>
 
           {duelMode && (
-            <Button
-              onClick={() => {
-                const link = `${window.location.origin}/spectate?match=${duelMode.matchId}`;
-                navigator.clipboard.writeText(link);
-                toast.success(t('dashboard.copied') || 'Lien spectateur copié avec succès !');
-              }}
-              variant="outline"
-              className="bg-blue-500/20 backdrop-blur-md border-blue-500/30 text-blue-300 hover:bg-blue-500/40 hover:text-white shadow-lg shadow-blue-500/10 transition-all font-bold tracking-wide"
-            >
-              <Copy className="w-4 h-4 mr-2" />
-              Partager le Live
-            </Button>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5 bg-white/5 px-3 py-2 rounded-lg border border-white/10 transition-all hover:bg-white/10" title="Spectateurs Live">
+                 <Eye className="w-4 h-4 text-slate-400" />
+                 <span className="text-sm font-bold text-slate-200">{spectatorCount}</span>
+              </div>
+              <Button
+                onClick={() => {
+                  const link = `${window.location.origin}/spectate?match=${duelMode.matchId}`;
+                  navigator.clipboard.writeText(link);
+                  toast.success(t('dashboard.copied') || 'Lien spectateur copié avec succès !');
+                }}
+                variant="outline"
+                className="bg-blue-500/20 backdrop-blur-md border-blue-500/30 text-blue-300 hover:bg-blue-500/40 hover:text-white shadow-lg shadow-blue-500/10 transition-all font-bold tracking-wide"
+              >
+                <Copy className="w-4 h-4 mr-2" />
+                Partager le Live
+              </Button>
+            </div>
           )}
         </div>
 
