@@ -352,25 +352,39 @@ const PlayerCard = ({ name, score, role }) => (
 );
 
 const FloatingReaction = ({ type }) => {
-  const x = Math.random() * 60 + 20; // 20% to 80% to keep it centered-ish
-  const duration = Math.random() * 2 + 2; // 2s to 4s
-  const rot = Math.random() * 40 - 20; // -20 to 20 deg
+  // Effet multiple: Spawning a cluster of 3 diverging emojis instead of 1
+  const baseX = Math.random() * 60 + 20; // Base centered origin for the cluster
 
   return (
-    <motion.div
-      initial={{ y: '100vh', x: `${x}vw`, opacity: 0, scale: 0.5, rotate: 0 }}
-      animate={{ 
-        y: '-20vh', 
-        opacity: [0, 1, 1, 0], 
-        scale: [1, 1.5, 1.5, 1],
-        rotate: [0, rot, rot * 2, 0]
-      }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: duration, ease: [0.33, 1, 0.68, 1] }}
-      className="absolute text-5xl z-40 select-none filter drop-shadow-[0_0_15px_rgba(255,255,255,0.3)]"
-    >
-      {type}
-    </motion.div>
+    <>
+      {[...Array(3)].map((_, i) => {
+        const duration = Math.random() * 3 + 4; // 4s to 7s (Très doux)
+        const delay = Math.random() * 0.4; // Staggered spawn
+        const driftX = (Math.random() - 0.5) * 15; // Delicate drift on X axis
+        const rot = Math.random() * 90 - 45; 
+        
+        return (
+          <motion.div
+            key={i}
+            initial={{ y: '100vh', x: `${baseX}vw`, opacity: 0, scale: 0.3, rotate: 0 }}
+            animate={{ 
+              y: '-20vh', 
+              x: `${baseX + driftX}vw`, // Curves outward elegantly
+              opacity: [0, 0.9, 1, 0], 
+              scale: [0.3, 1.6, 1.2, 0.9],
+              rotate: [0, rot, rot * 2]
+            }}
+            exit={{ opacity: 0 }}
+            transition={{ duration, delay, ease: [0.22, 1, 0.36, 1] }} 
+            // Mix-blend-screen gives that magical overlap effect when emojis touch!
+            className="absolute text-4xl sm:text-5xl z-40 select-none filter drop-shadow-[0px_0px_20px_rgba(255,255,255,0.4)]"
+            style={{ mixBlendMode: 'screen' }}
+          >
+            {type}
+          </motion.div>
+        );
+      })}
+    </>
   );
 };
 
