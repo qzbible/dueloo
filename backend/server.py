@@ -31,9 +31,13 @@ from routes.games_routes import router as games_router
 from routes.admin_routes import router as admin_router
 
 # ── App & Socket.IO setup ────────────────────────────────────────────
+allowed_origins = os.getenv("CORS_ORIGINS", "*")
+if allowed_origins != "*":
+    allowed_origins = [o.strip() for o in allowed_origins.split(",")]
+
 sio = socketio.AsyncServer(
     async_mode='asgi',
-    cors_allowed_origins='*',
+    cors_allowed_origins=allowed_origins,
     logger=True,
     engineio_logger=False
 )

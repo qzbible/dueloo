@@ -11,5 +11,5 @@ python3 scripts/seed_db.py || echo "Warning: Seeding failed, but continuing..."
 
 echo "Immersio API starting..."
 
-# Start FastAPI application with uvicorn
-exec uvicorn server:app --host 0.0.0.0 --port "${flask_listening_port:-5001}"
+# Start FastAPI application with uvicorn (wrapped with Socket.IO)
+exec uvicorn server:socket_app --host 0.0.0.0 --port "${flask_listening_port:-5001}"
