@@ -988,6 +988,7 @@ async def shutdown_db_client():
             {"mode_id": "awale", "category": "Strategie et Plateau", "name": "Awalé", "description": "Le jeu de semailles africain", "icon": "🟤", "difficulty": "moyen", "duration_minutes": 10, "color": "from-orange-700 to-amber-900", "available": False},
             {"mode_id": "fanorona", "category": "Strategie et Plateau", "name": "Fanorona", "description": "Stratégie malgache de captures multiples", "icon": "🔶", "difficulty": "difficile", "duration_minutes": 15, "color": "from-orange-400 to-orange-600", "available": False},
             {"mode_id": "zamma", "category": "Strategie et Plateau", "name": "Zamma", "description": "Variante sahélienne intense du damier", "icon": "🔷", "difficulty": "difficile", "duration_minutes": 20, "color": "from-blue-400 to-blue-600", "available": False},
+            {"mode_id": "ludo", "category": "Strategie et Plateau", "name": "Ludo", "description": "Le jeu de parcours classique revisité en duel", "icon": "🎲", "difficulty": "facile", "duration_minutes": 10, "color": "from-amber-400 to-orange-600", "available": True},
 
             # Cartes
             {"mode_id": "uno", "category": "Cartes", "name": "UNO", "description": "Débarrassez-vous de vos cartes au bon moment", "icon": "🎴", "difficulty": "facile", "duration_minutes": 10, "color": "from-red-500 via-yellow-500 to-green-500", "available": False},

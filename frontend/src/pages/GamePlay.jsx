@@ -25,6 +25,7 @@ import TicTacToe from '@/components/games/TicTacToe';
 import Connect4 from '@/components/games/Connect4';
 import Snake from '@/components/games/Snake';
 import Checkers from '@/components/games/Checkers';
+import Ludo from '@/components/games/Ludo';
 import Othello from '@/components/games/Othello';
 import Mancala from '@/components/games/Mancala';
 import Chess from '@/components/games/Chess';
@@ -297,6 +298,7 @@ const GamePlay = () => {
       'puissance4': Connect4,
       'snake': Snake,
       'damier': Checkers,
+      'ludo': Ludo,
       'othello': Othello,
       'awale': Mancala,
       'echecs': Chess,
