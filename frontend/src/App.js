@@ -24,6 +24,28 @@ import Achievements from '@/pages/Achievements';
 import Tournaments from '@/pages/Tournaments';
 import SpectatorFeed from '@/pages/Spectator';
 import Admin from '@/pages/Admin';
+import { useAuthStore } from '@/stores/authStore';
+
+const ProtectedRoute = ({ children }) => {
+  const { isAuthenticated, loading } = useAuthStore();
+  const location = useLocation();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950">
+        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    // Save the current location (pathname + search) to redirect back after login
+    sessionStorage.setItem('intended_path', location.pathname + location.search);
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+};
 
 function AppRouter() {
   const location = useLocation();
@@ -35,22 +57,22 @@ function AppRouter() {
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
-      <Route path="/dashboard" element={<Dashboard />} />
-      <Route path="/campaign" element={<Campaign />} />
-      <Route path="/quiz" element={<QuizGame />} />
-      <Route path="/games" element={<Dashboard />} />
-      <Route path="/config/:modeId" element={<GameConfig />} />
-      <Route path="/play/:modeId" element={<GamePlay />} />
-      <Route path="/duo" element={<ModeDuo />} />
-      <Route path="/duo/play/:matchId" element={<DuoPlay />} />
-      <Route path="/duo/history" element={<DuoHistory />} />
-      <Route path="/duo/leaderboard" element={<DuoLeaderboard />} />
-      <Route path="/group" element={<ModeGroupe />} />
-      <Route path="/group/host/:sessionId" element={<GroupHost />} />
-      <Route path="/group/play/:sessionId" element={<GroupPlay />} />
-      <Route path="/leaderboard" element={<Leaderboard />} />
-      <Route path="/achievements" element={<Achievements />} />
-      <Route path="/tournaments" element={<Tournaments />} />
+      <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+      <Route path="/campaign" element={<ProtectedRoute><Campaign /></ProtectedRoute>} />
+      <Route path="/quiz" element={<ProtectedRoute><QuizGame /></ProtectedRoute>} />
+      <Route path="/games" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+      <Route path="/config/:modeId" element={<ProtectedRoute><GameConfig /></ProtectedRoute>} />
+      <Route path="/play/:modeId" element={<ProtectedRoute><GamePlay /></ProtectedRoute>} />
+      <Route path="/duo" element={<ProtectedRoute><ModeDuo /></ProtectedRoute>} />
+      <Route path="/duo/play/:matchId" element={<ProtectedRoute><DuoPlay /></ProtectedRoute>} />
+      <Route path="/duo/history" element={<ProtectedRoute><DuoHistory /></ProtectedRoute>} />
+      <Route path="/duo/leaderboard" element={<ProtectedRoute><DuoLeaderboard /></ProtectedRoute>} />
+      <Route path="/group" element={<ProtectedRoute><ModeGroupe /></ProtectedRoute>} />
+      <Route path="/group/host/:sessionId" element={<ProtectedRoute><GroupHost /></ProtectedRoute>} />
+      <Route path="/group/play/:sessionId" element={<ProtectedRoute><GroupPlay /></ProtectedRoute>} />
+      <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
+      <Route path="/achievements" element={<ProtectedRoute><Achievements /></ProtectedRoute>} />
+      <Route path="/tournaments" element={<ProtectedRoute><Tournaments /></ProtectedRoute>} />
       <Route path="/spectate" element={<SpectatorFeed />} />
       <Route path="/premium" element={<Premium />} />
       <Route path="/premium-success" element={<PremiumSuccess />} />

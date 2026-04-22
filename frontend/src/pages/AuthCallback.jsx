@@ -33,9 +33,18 @@ const AuthCallback = () => {
         );
 
         setUser(response.data);
-        navigate('/dashboard', { replace: true, state: { user: response.data } });
+        
+        // Restore intended path if it exists
+        const intendedPath = sessionStorage.getItem('intended_path');
+        if (intendedPath) {
+          sessionStorage.removeItem('intended_path');
+          navigate(intendedPath, { replace: true });
+        } else {
+          navigate('/dashboard', { replace: true, state: { user: response.data } });
+        }
       } catch (error) {
         console.error('Erreur d\'authentification:', error);
+        sessionStorage.removeItem('intended_path');
         navigate('/');
       }
     };
