@@ -137,10 +137,11 @@ const SpectatorView = ({ matchId, initialData, isActive = true }) => {
       isSpectator: true,
       role: role,
       matchId: matchId,
-      opponentMove: { ...opponentMove, _ts: Date.now() }, // Force new reference
+      opponentMove: { ...opponentMove, _ts: Date.now() }, 
       gameData: matchData.game_data,
       bothReady: true,
-      duelMode: { role: role, matchId: matchId }
+      duelMode: { role: role, matchId: matchId },
+      playerNames: { player1: matchData.player1_name, player2: matchData.player2_name }
     };
 
     const gameComponents = {

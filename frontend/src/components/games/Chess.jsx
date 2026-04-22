@@ -11,7 +11,7 @@ const PIECES = {
   K: { type: 'king', value: 100, icon: '♚' }
 };
 
-const Chess = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator = false }) => {
+const Chess = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator = false, playerNames }) => {
   const [board, setBoard] = useState(initialBoard());
   const [turn, setTurn] = useState('w'); // 'w' for White (Player), 'b' for Black (AI)
   const [selected, setSelected] = useState(null);
@@ -200,28 +200,35 @@ const Chess = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectato
   const opponentColor = myColor === 'w' ? 'Noirs ♟' : 'Blancs ♙';
   const myColorLabel = myColor === 'w' ? 'Blancs ♙' : 'Noirs ♟';
 
+  const getBadgeClass = () => {
+    if (winner) {
+      if (isSpectator) return winner === 'w' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'bg-purple-500/20 text-purple-300 border border-purple-500/30';
+      return winner === myColor ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-slate-500/20 text-slate-300 border border-slate-500/30';
+    }
+    if (isSpectator) return turn === 'w' ? 'bg-blue-500/10 text-blue-300 border border-blue-500/20 shadow-[0_0_15px_rgba(59,130,246,0.15)]' : 'bg-purple-500/10 text-purple-300 border border-purple-500/20 shadow-[0_0_15px_rgba(168,85,247,0.15)]';
+    return isMyTurnNow ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 animate-pulse' : 'bg-blue-500/10 text-blue-300 border border-blue-500/20';
+  };
+
   return (
     <div className={`${isSpectator ? 'w-full h-full' : 'max-w-xl mx-auto'} flex flex-col`}>
       {/* ─── Turn Status & Info ─────────────────────────── */}
       <div className="text-center mb-6">
         {/* Status badge */}
-        <div className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-semibold transition-all duration-300 ${
-          winner
-            ? (winner === myColor ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-slate-500/20 text-slate-300 border border-slate-500/30')
-            : isMyTurnNow
-            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 animate-pulse'
-            : 'bg-blue-500/10 text-blue-300 border border-blue-500/20'
-        }`}>
+        <div className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-semibold transition-all duration-300 ${getBadgeClass()}`}>
           {winner ? (
-            winner === myColor ? '🏆 Victoire — Roi adverse capturé !' : '💀 Défaite — Votre roi a été pris'
-          ) : duelMode ? (
+            isSpectator 
+              ? (winner === 'w' ? `🏆 Victoire de ${playerNames?.player1?.split(' ')[0] || 'Blancs'} !` : `🏆 Victoire de ${playerNames?.player2?.split(' ')[0] || 'Noirs'} !`)
+              : (winner === myColor ? '🏆 Victoire — Roi adverse capturé !' : '💀 Défaite — Votre roi a été pris')
+          ) : duelMode && !isSpectator ? (
             !bothReady
               ? '⏳ Connexion de l\'adversaire…'
               : isMyTurnNow
               ? `♟ Votre tour (${myColorLabel})`
               : '⏳ Adversaire réfléchit…'
           ) : isSpectator ? (
-            `♟ Vue Spectateur — ${turn === 'w' ? 'Blancs' : 'Noirs'} jouent`
+            turn === 'w' 
+              ? <><span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse shrink-0"/> Au tour de <span className="font-black text-blue-200 mx-0.5">{playerNames?.player1?.split(' ')[0] || 'Blancs'}</span> (Blancs)</>
+              : <><span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse shrink-0"/> Au tour de <span className="font-black text-purple-200 mx-0.5">{playerNames?.player2?.split(' ')[0] || 'Noirs'}</span> (Noirs)</>
           ) : (
             turn === 'w' ? '♟ Votre tour (Blancs)' : '🤖 L\'IA réfléchit (Noirs)…'
           )}
