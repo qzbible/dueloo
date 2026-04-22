@@ -247,7 +247,7 @@ const Checkers = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpect
         </div>
       </div>
 
-      <div className="flex justify-between items-center w-full max-w-[min(90vw,500px)] lg:max-w-none mx-auto mb-3 px-1">
+      <div className={`flex justify-between items-center ${isSpectator ? 'w-full max-w-[min(100%,480px)] self-center' : 'w-full max-w-[min(90vw,500px)] lg:max-w-none'} mx-auto mb-3 px-1`}>
           <div className="flex flex-col gap-1 items-start">
              <div className="text-xs font-bold text-orange-300 uppercase shrink-0">Prises (Blancs)</div>
              <div className="flex flex-wrap max-w-[120px] gap-0.5 h-6">
@@ -262,7 +262,7 @@ const Checkers = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpect
           </div>
       </div>
 
-      <Card className="p-1 sm:p-2 bg-[#5c3a21] shadow-2xl border-2 sm:border-4 border-[#3e2513] aspect-square w-full max-w-[min(90vw,500px)] lg:max-w-none mx-auto overflow-hidden">
+      <Card className={`p-1 sm:p-2 bg-[#5c3a21] shadow-2xl border-2 sm:border-4 border-[#3e2513] ${isSpectator ? 'w-full max-w-[min(100%,480px)] aspect-square self-center mt-auto mb-auto' : 'aspect-square w-full max-w-[min(90vw,500px)] lg:max-w-none'} mx-auto overflow-hidden`}>
         <div className="grid grid-cols-8 grid-rows-8 h-full rounded-sm overflow-hidden">
           {board.map((row, r) => row.map((cell, c) => {
             const isValid = validMoves.some(m => m.r === r && m.c === c);
