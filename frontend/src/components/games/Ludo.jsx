@@ -67,8 +67,8 @@ const getScreenCoordinates = (color, pos, id) => {
 
 const Ludo = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator = false, playerNames }) => {
   const [gameState, setGameState] = useState(() => {
-    if (duelMode?.recovered) return duelMode.recovered;
-    if (duelMode?.gameData) return duelMode.gameData;
+    if (duelMode?.recovered?.pieces) return duelMode.recovered;
+    if (duelMode?.gameData?.pieces) return duelMode.gameData;
     return {
       pieces: {
         R: [-1, -1, -1, -1], // Pos -1 is Base. 57 is Done.
