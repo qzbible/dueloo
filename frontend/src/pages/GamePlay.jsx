@@ -45,7 +45,7 @@ import Fanorona from '@/components/games/Fanorona';
 import Zamma from '@/components/games/Zamma';
 import VoiceChat from '@/components/VoiceChat';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 
 const GamePlay = () => {
   const navigate = useNavigate();

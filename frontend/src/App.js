@@ -27,22 +27,25 @@ import SpectatorFeed from '@/pages/Spectator';
 import Admin from '@/pages/Admin';
 import { useAuthStore } from '@/stores/authStore';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuthStore();
   const location = useLocation();
 
+  console.log('[ProtectedRoute] state:', { isAuthenticated, loading, path: location.pathname });
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950">
-        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-white/50 text-sm animate-pulse">Vérification de session...</p>
+        </div>
       </div>
     );
   }
 
   if (!isAuthenticated) {
-    // Save the current location (pathname + search) to redirect back after login
+    console.log('[ProtectedRoute] Not authenticated, redirecting to Landing');
     sessionStorage.setItem('intended_path', location.pathname + location.search);
     return <Navigate to="/" replace />;
   }
@@ -53,6 +56,8 @@ const ProtectedRoute = ({ children }) => {
 const PublicRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuthStore();
 
+  console.log('[PublicRoute] state:', { isAuthenticated, loading });
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950">
@@ -62,6 +67,7 @@ const PublicRoute = ({ children }) => {
   }
 
   if (isAuthenticated) {
+    console.log('[PublicRoute] Authenticated, redirecting to Dashboard');
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -108,11 +114,18 @@ function App() {
 
   useEffect(() => {
     const initAuth = async () => {
+      const apiBase = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+      console.log('[App] Starting auth initialization at:', apiBase);
+      
       try {
-        const response = await axios.get(`${BACKEND_URL}/api/auth/me`, { withCredentials: true });
+        const response = await axios.get(`${apiBase}/api/auth/me`, { 
+          withCredentials: true,
+          timeout: 4000 
+        });
+        console.log('[App] Auth success:', response.data.email);
         setUser(response.data);
       } catch (error) {
-        console.log('No active session');
+        console.warn('[App] Auth failed:', error.message);
         setLoading(false);
       }
     };

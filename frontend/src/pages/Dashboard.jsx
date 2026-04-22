@@ -13,7 +13,7 @@ import { io } from 'socket.io-client';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -26,10 +26,16 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { 
-    if (!user) {
-      fetchUserData();
-    }
-    fetchGameModes();
+    const init = async () => {
+      if (!user) {
+        await fetchUserData();
+      } else {
+        setLoading(false);
+      }
+      await fetchGameModes();
+    };
+
+    init();
 
     const socket = io(BACKEND_URL, { path: '/api/socket.io', transports: ['websocket'] });
     socket.on('game_mode_updated', (updatedMode) => {
