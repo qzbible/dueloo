@@ -29,6 +29,7 @@ const SpectatorView = ({ matchId, initialData, isActive = true }) => {
   const [commentText, setCommentText] = useState('');
   const [opponentMove, setOpponentMove] = useState(null);
   const [loading, setLoading] = useState(!initialData);
+  const [spectatorCount, setSpectatorCount] = useState(0);
   const commentsEndRef = useRef(null);
   
   const scrollToBottom = () => {
@@ -104,6 +105,10 @@ const SpectatorView = ({ matchId, initialData, isActive = true }) => {
       setTimeout(() => {
         setReactions(prev => prev.filter(r => r.id !== id));
       }, 3000);
+    });
+
+    socketRef.current.on('spectator_count', (data) => {
+      setSpectatorCount(data.count);
     });
   };
 
@@ -181,8 +186,9 @@ const SpectatorView = ({ matchId, initialData, isActive = true }) => {
              role="spectator" 
              userId={user?.user_id || 'guest'} 
            />
-           <div className="w-10 h-10 flex items-center justify-center">
+           <div className="flex items-center gap-1.5 bg-blue-500/10 px-2 py-1.5 rounded-lg border border-blue-500/20">
               <Users className="w-4 h-4 text-blue-400" />
+              <span className="text-xs font-black text-blue-100">{spectatorCount}</span>
            </div>
         </div>
       </header>
@@ -195,9 +201,15 @@ const SpectatorView = ({ matchId, initialData, isActive = true }) => {
            </Button>
            <div className="flex items-center justify-between mb-4">
              <h2 className="text-xs font-bold text-blue-400 uppercase tracking-widest">Match en cours</h2>
-             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/20">
-                <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                <span className="text-[8px] font-black text-red-500 uppercase tracking-tighter">Direct</span>
+             <div className="flex items-center gap-2">
+               <div className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-md border border-white/10" title="Spectateurs">
+                 <Users className="w-3 h-3 text-slate-400" />
+                 <span className="text-[10px] font-bold text-slate-300">{spectatorCount}</span>
+               </div>
+               <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-red-500/10 border border-red-500/20">
+                  <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                  <span className="text-[8px] font-black text-red-500 uppercase tracking-tighter">Direct</span>
+               </div>
              </div>
            </div>
            <div className="space-y-4">

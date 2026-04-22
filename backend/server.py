@@ -549,6 +549,10 @@ async def disconnect(sid):
             del duo_rooms[match_id][sid]
             logging.info(f"Removed {role} {user_id} (sid: {sid}) from match {match_id}")
             
+            if role == "spectator":
+                spectators = [v for v in duo_rooms.get(match_id, {}).values() if v.get("role") == "spectator"]
+                await sio.emit("spectator_count", {"count": len(spectators)}, room=match_id)
+            
             # If room is empty, optionally cleanup
             if not duo_rooms[match_id]:
                 del duo_rooms[match_id]
@@ -605,6 +609,9 @@ async def spectate_match(sid, data):
         "comments": comments,
         "current_state": match
     }, room=sid)
+
+    spectators = [v for v in duo_rooms.get(match_id, {}).values() if v.get("role") == "spectator"]
+    await sio.emit("spectator_count", {"count": len(spectators)}, room=match_id)
 
 @sio.event
 async def game_like(sid, data):
