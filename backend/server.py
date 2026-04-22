@@ -755,6 +755,16 @@ async def send_emoji(sid, data):
 async def game_move(sid, data):
     match_id = data.get("match_id")
     await sio.emit("opponent_move", data, room=match_id, skip_sid=sid)
+    
+    if "boardState" in data:
+        update_fields = {"game_data.boardState": data["boardState"]}
+        if "turnState" in data:
+            update_fields["game_data.turnState"] = data["turnState"]
+            
+        await db.duo_matches.update_one(
+            {"match_id": match_id},
+            {"$set": update_fields}
+        )
 
 # WebRTC Signaling
 @sio.event

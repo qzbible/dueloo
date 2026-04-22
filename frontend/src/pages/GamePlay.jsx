@@ -151,7 +151,7 @@ const GamePlay = () => {
           // Fetch full match state and start game with recovered context
           try {
             const matchRes = await axios.get(`${BACKEND_URL}/api/duo/match/${dData.matchId}`, { withCredentials: true });
-            startGame(dData, matchRes.data.current_state);
+            startGame(dData, matchRes.data.current_state.game_data);
           } catch (e) {
             startGame(dData);
           }

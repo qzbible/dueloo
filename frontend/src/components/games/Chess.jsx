@@ -12,8 +12,16 @@ const PIECES = {
 };
 
 const Chess = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator = false, playerNames }) => {
-  const [board, setBoard] = useState(initialBoard());
-  const [turn, setTurn] = useState('w'); // 'w' for White (Player), 'b' for Black (AI)
+  const [board, setBoard] = useState(() => {
+    if (duelMode?.recovered?.boardState) return duelMode.recovered.boardState;
+    if (duelMode?.gameData?.boardState) return duelMode.gameData.boardState;
+    return initialBoard();
+  });
+  const [turn, setTurn] = useState(() => {
+    if (duelMode?.recovered?.turnState) return duelMode.recovered.turnState;
+    if (duelMode?.gameData?.turnState) return duelMode.gameData.turnState;
+    return 'w';
+  }); // 'w' for White (Player), 'b' for Black (AI)
   const [selected, setSelected] = useState(null);
   const [validMoves, setValidMoves] = useState([]);
   const [winner, setWinner] = useState(null);
