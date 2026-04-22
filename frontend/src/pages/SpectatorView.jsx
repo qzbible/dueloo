@@ -146,7 +146,7 @@ const SpectatorView = ({ matchId, initialData, isActive = true }) => {
 
     const gameComponents = {
       'echecs': Chess,
-      'dames': React.lazy(() => import('@/components/games/Checkers')),
+      'damier': React.lazy(() => import('@/components/games/Checkers')),
       // other games will just use their default component config
     };
 
