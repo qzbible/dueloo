@@ -7,7 +7,8 @@ import { io } from 'socket.io-client';
 import { useTranslation } from '@/hooks/useTranslation';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { ArrowLeft, Trophy } from 'lucide-react';
+import { ArrowLeft, Trophy, Copy } from 'lucide-react';
+import { toast } from 'sonner';
 
 import QuiADitQuoi from '@/components/games/QuiADitQuoi';
 import VraiFaux from '@/components/games/VraiFaux';
@@ -408,14 +409,31 @@ const GamePlay = () => {
       </div>
 
       <div className="relative z-10 container mx-auto px-4 py-8">
-        <Button
-          onClick={() => navigate('/games')}
-          variant="outline"
-          className="bg-white/10 backdrop-blur-md border-white/20 text-white hover:bg-white/20 mb-6"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Quitter
-        </Button>
+        <div className="flex items-center justify-between mb-6">
+          <Button
+            onClick={() => navigate('/games')}
+            variant="outline"
+            className="bg-white/10 backdrop-blur-md border-white/20 text-white hover:bg-white/20"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Quitter
+          </Button>
+
+          {duelMode && (
+            <Button
+              onClick={() => {
+                const link = `${window.location.origin}/spectate?match=${duelMode.matchId}`;
+                navigator.clipboard.writeText(link);
+                toast.success(t('dashboard.copied') || 'Lien spectateur copié avec succès !');
+              }}
+              variant="outline"
+              className="bg-blue-500/20 backdrop-blur-md border-blue-500/30 text-blue-300 hover:bg-blue-500/40 hover:text-white shadow-lg shadow-blue-500/10 transition-all font-bold tracking-wide"
+            >
+              <Copy className="w-4 h-4 mr-2" />
+              Partager le Live
+            </Button>
+          )}
+        </div>
 
         {duelMode && socketRef.current && (
           <div className="flex justify-center mb-6">

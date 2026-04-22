@@ -36,7 +36,20 @@ const SpectatorFeed = () => {
     if (showRefreshSpin) setIsRefreshing(true);
     try {
       const res = await axios.get(`${BACKEND_URL}/api/duo/active-matches`, { withCredentials: true });
-      setMatches(res.data);
+      let data = res.data;
+      
+      const searchParams = new URLSearchParams(window.location.search);
+      const targetMatchId = searchParams.get('match');
+      
+      if (targetMatchId) {
+        const targetIndex = data.findIndex(m => m.match_id === targetMatchId);
+        if (targetIndex > -1) {
+          const [target] = data.splice(targetIndex, 1);
+          data.unshift(target);
+        }
+      }
+      
+      setMatches(data);
     } catch (e) {
       console.error(e);
     } finally {
