@@ -118,7 +118,7 @@ const GamePlay = () => {
           };
         }
 
-        if (!dData) {
+        if (!dData && !state?.config) {
            const saved = localStorage.getItem('active_duel');
            if (saved) {
              const parsed = JSON.parse(saved);
@@ -233,11 +233,21 @@ const GamePlay = () => {
       setGameSession(sessionRes.data.session_id);
       saveDuelSession(dData, sessionRes.data.session_id);
 
-      if (dData) {
-        setDuelMode(prev => ({ ...prev, gameData: sessionRes.data.game_data, config: state?.config }));
+      if (dData && dData.matchId) {
+        setDuelMode(prev => ({ 
+          ...prev, 
+          matchId: dData.matchId,
+          role: dData.role,
+          userId: dData.userId,
+          gameData: sessionRes.data.game_data, 
+          config: state?.config 
+        }));
       } else {
         setBothReady(true);
-        setDuelMode({ config: state?.config });
+        // Ensure we DON'T have a matchId if it's AI mode
+        setDuelMode({ 
+          config: state?.config || { opponent: 'ia' } 
+        });
       }
 
       if (recovered) {
@@ -271,7 +281,7 @@ const GamePlay = () => {
         { withCredentials: true }
       );
       
-      setResult(response.data);
+      setResult({ ...response.data, gameContext: answers });
       localStorage.removeItem('active_duel');
       
       if (response.data.score >= 3) {
@@ -338,7 +348,7 @@ const GamePlay = () => {
 
     return (
       <GameComponent 
-        onSubmit={handleSubmit} 
+        onSubmit={(answers) => handleSubmit({ ...answers, modeId })} 
         duelMode={duelMode}
         gameData={duelMode?.gameData || gameMode?.game_data}
         opponentMove={opponentMove}
@@ -359,6 +369,25 @@ const GamePlay = () => {
     );
   }
 
+  const getVictoryMessage = () => {
+    const won = result.gameContext?.won || result.score >= 3;
+    if (!won) return t('games.well_played');
+
+    const messages = {
+      ludo: "Quelle endurance ! Tu as ramené tes brebis au bercail.",
+      quiz_qui_a_dit: "Tu as bien sondé les Écritures !",
+      quiz_vrai_faux: "La vérité n'a plus de secret pour toi.",
+      chrono_versets: "Une mémoire digne des prophètes !",
+      echecs: "Une victoire digne de la sagesse de Salomon !",
+      damier: "Une stratégie victorieuse !",
+      morpion: "La victoire est tienne !",
+      puissance4: "Bien joué, champion !",
+      snake: "Quelle agilité !",
+    };
+
+    return messages[modeId] || t('games.excellent');
+  };
+
   if (result) {
     return (
       <div className="min-h-screen relative overflow-hidden flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #1E3A8A 0%, #312E81 50%, #1E3A8A 100%)' }}>
@@ -371,13 +400,13 @@ const GamePlay = () => {
         >
           <Card className="p-8 bg-white/10 backdrop-blur-md border-white/20 text-center">
             <div className={`w-24 h-24 rounded-full mx-auto mb-6 flex items-center justify-center ${
-              result.score >= 3 ? 'bg-gradient-to-br from-emerald-400 to-emerald-600' : 'bg-gradient-to-br from-orange-400 to-orange-600'
+              result.score >= 3 || result.gameContext?.won ? 'bg-gradient-to-br from-emerald-400 to-emerald-600' : 'bg-gradient-to-br from-orange-400 to-orange-600'
             }`}>
               <Trophy className="w-12 h-12 text-white" />
             </div>
             
-            <h2 className="text-3xl font-bold text-white mb-4" style={{ fontFamily: 'Fraunces, serif' }}>
-              {result.score >= 3 ? t('games.excellent') : t('games.well_played')}
+            <h2 className="text-2xl font-black text-white mb-4 leading-tight">
+              {getVictoryMessage()}
             </h2>
             
             <div className="mb-8">

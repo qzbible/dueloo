@@ -76,9 +76,16 @@ const BASE_SPOTS = {
 };
 
 // Resolve board coordinates for a piece
-// pos=-1 → base  |  0-51 → main path  |  52-57 → home stretch  |  57 → center
+// pos=-1  → base
+// pos<-1  → jail (e.g., -10=R base, -20=G, -30=Y, -40=B)
+// 0-51    → main path
+// 52-57   → home stretch
 const getCoord = (color, pos, id) => {
   if (pos === -1) return BASE_SPOTS[color][id];
+  if (pos <= -10) {
+    const jailColor = { '-10':'R', '-20':'G', '-30':'Y', '-40':'B' }[pos];
+    return BASE_SPOTS[jailColor][id];
+  }
   if (pos === 57)  return [7, 7];
   if (pos >= 52)   return HOME_PATH[color][pos - 52] ?? [7, 7];
   return MAIN_PATH[(SPAWN_IDX[color] + pos) % 52];
@@ -88,8 +95,12 @@ const getCoord = (color, pos, id) => {
 const getValid = (color, pieces, dice) =>
   (pieces[color] ?? []).reduce((acc, pos, id) => {
     if (pos === 57) return acc;
+    // Release from jail to own base
+    if (pos <= -10 && dice === 6) return [...acc, id];
+    // Move from base to spawn
     if (pos === -1 && dice === 6) return [...acc, id];
-    if (pos !== -1 && pos + dice <= 57) return [...acc, id];
+    // Normal move
+    if (pos >= 0 && pos + dice <= 57) return [...acc, id];
     return acc;
   }, []);
 
@@ -193,33 +204,44 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator
   // ── GAME MODE DETECTION ───────────────────────────────────────────────────────
   const isMultiplayer = !!(duelMode?.matchId || duelMode?.gameData?.match_id);
   const isAIMode      = !isMultiplayer && (duelMode?.config?.opponent === 'ia');
-  const maxP          = duelMode?.max_players || duelMode?.gameData?.max_players || 2;
+  const maxP          = duelMode?.max_players || 
+                        duelMode?.gameData?.max_players || 
+                        duelMode?.config?.specifics?.max_players || 2;
+
   const ROLE_COLOR    = maxP === 2 ? { player1:'R', player2:'B' } : { player1:'R', player2:'G', player3:'Y', player4:'B' };
   const myColor       = isMultiplayer ? (ROLE_COLOR[duelMode?.role] || 'R') : 'R';
-  const aiColor       = isAIMode ? (maxP === 2 ? 'B' : 'G') : null;
   const isHumanTurn   = turn === myColor && (!isMultiplayer || bothReady);
-  const isAITurn      = isAIMode && turn === aiColor && !winner;
+  const isAITurn      = isAIMode && turn !== myColor && !winner;
+
   const validIds      = rolled ? getValid(turn, pieces, dice) : [];
 
   // ── NEXT PLAYER ───────────────────────────────────────────────────────────────
   const getNextPlayer = useCallback((current) => {
-    if (maxP === 2) return current === 'R' ? 'B' : 'R';
     const seq = { R:'G', G:'Y', Y:'B', B:'R' };
-    const candy = seq[current];
-    if (maxP === 3) return candy === 'B' ? 'R' : candy;
-    return candy;
+    if (maxP === 2) return current === 'R' ? 'B' : 'R';
+    if (maxP === 3) {
+      const candy = seq[current];
+      return candy === 'B' ? 'R' : candy;
+    }
+    return seq[current];
   }, [maxP]);
 
   // ── APPLY MOVE (pure calculation + setState) ───────────────────────────────────
   const applyMove = useCallback((state, pieceId, diceVal) => {
     const { turn: t, pieces: p } = state;
     const startPos = p[t][pieceId];
-    const endPos   = startPos === -1 ? 0 : startPos + diceVal;
+    
+    let endPos;
+    if (startPos <= -10) endPos = -1; // Jail -> Own Base
+    else if (startPos === -1) endPos = 0; // Own Base -> Spawn
+    else endPos = startPos + diceVal; // Path increment
 
     const newPieces = clone(p);
     newPieces[t][pieceId] = endPos;
 
     let didCapture = false;
+    const JAIL_VALS = { R: -10, G: -20, Y: -30, B: -40 };
+
     if (endPos >= 0 && endPos < 52) {
       const absEnd  = (SPAWN_IDX[t] + endPos) % 52;
       const [er, ec] = MAIN_PATH[absEnd];
@@ -231,7 +253,7 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator
               didCapture = true;
               setCaptureKey(cellKey);
               setTimeout(() => setCaptureKey(null), 800);
-              return -1;
+              return JAIL_VALS[t]; // Now jailed in capturer's base
             }
             return pp;
           });
@@ -255,13 +277,20 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator
     if (animPiece) return;
     const { turn: t, pieces: p, dice: d } = gsRef.current;
     const startPos = p[t][pieceId];
-    const steps    = startPos === -1 ? 1 : d;
-
-    for (let i = 1; i <= steps; i++) {
-      setAnimPiece({ color: t, id: pieceId, pos: startPos === -1 ? 0 : startPos + i });
-      await sleep(100);
+    
+    // Jail -> Base jump (no step animation)
+    if (startPos <= -10) {
+      setAnimPiece({ color: t, id: pieceId, pos: -1 });
+      await sleep(150);
+      setAnimPiece(null);
+    } else {
+      const steps = startPos === -1 ? 1 : d;
+      for (let i = 1; i <= steps; i++) {
+        setAnimPiece({ color: t, id: pieceId, pos: startPos === -1 ? 0 : startPos + i });
+        await sleep(100);
+      }
+      setAnimPiece(null);
     }
-    setAnimPiece(null);
 
     const next = applyMove(gsRef.current, pieceId, d);
     setGs(next);
@@ -298,60 +327,49 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator
 
   // ── AI ENGINE ─────────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!isAITurn || rolling || animPiece || winner || aiRunningRef.current) return;
-    aiRunningRef.current = true;
-
+    if (!isAITurn) return;
+    if (rolling || animPiece || winner || aiRunningRef.current || rolled) return;
+    
     const runAI = async () => {
-      await sleep(800);
+      aiRunningRef.current = true;
+      try {
+        await sleep(1000);
+        
+        // 1. Roll the dice
+        setRolling(true);
+        setShakeBoard(true);
+        setTimeout(() => setShakeBoard(false), 300);
+        await sleep(600);
+        const val = Math.floor(Math.random() * 6) + 1;
+        setRolling(false);
 
-      // 1. Roll the dice
-      setRolling(true);
-      setShakeBoard(true);
-      setTimeout(() => setShakeBoard(false), 300);
-      await sleep(500);
-      const val = Math.floor(Math.random() * 6) + 1;
-      setRolling(false);
+        // 2. Read latest state
+        const current = gsRef.current;
+        const valid   = getValid(current.turn, current.pieces, val);
 
-      // 2. Read latest state from ref
-      const current = gsRef.current;
-      const valid   = getValid(current.turn, current.pieces, val);
+        if (valid.length === 0) {
+          await sleep(600);
+          const next = { ...current, dice: null, rolled: false, turn: getNextPlayer(current.turn) };
+          setGs(next);
+          return;
+        }
 
-      if (valid.length === 0) {
-        // No moves — just pass turn
-        const next = { ...current, dice: null, rolled: false, turn: getNextPlayer(current.turn) };
-        setGs(next);
+        // 3. Choice of move
+        const chosenId = valid[Math.floor(Math.random() * valid.length)];
+        setGs(prev => ({ ...prev, dice: val, rolled: true }));
+        await sleep(800);
+
+        // 4. Animate & apply
+        await doMove(chosenId); 
+      } catch (err) {
+        console.error("[Ludo AI] Error in runAI:", err);
+      } finally {
         aiRunningRef.current = false;
-        return;
       }
-
-      // 3. Show dice value briefly
-      const chosenId = valid[Math.floor(Math.random() * valid.length)];
-      setGs(prev => ({ ...prev, dice: val, rolled: true }));
-      await sleep(600);
-
-      // 4. Animate & apply move
-      const { turn: t, pieces: freshPieces } = gsRef.current;
-      const startPos = freshPieces[t][chosenId];
-      const steps    = startPos === -1 ? 1 : val;
-      for (let i = 1; i <= steps; i++) {
-        setAnimPiece({ color: t, id: chosenId, pos: startPos === -1 ? 0 : startPos + i });
-        await sleep(90);
-      }
-      setAnimPiece(null);
-      await sleep(100);
-
-      // 5. Compute next state
-      const next = applyMove(gsRef.current, chosenId, val);
-      setGs(next);
-      aiRunningRef.current = false;
     };
 
     runAI();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [turn, isAITurn, winner]);
-
-  // Release AI lock on turn change
-  useEffect(() => { aiRunningRef.current = false; }, [turn]);
+  }, [turn, rolled, isAITurn, winner, animPiece, rolling, doMove, getNextPlayer]);
 
   // ── REMOTE SYNC ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -389,7 +407,9 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator
                 ? `🤖 Système joue (${COLOR_META[turn].label})…`
                 : isHumanTurn
                   ? rolled
-                    ? validIds.length > 0 ? '👉 Clique sur un pion !' : 'Aucun mouvement… → Passage'
+                    ? validIds.length > 0 
+                      ? `🎲 Résultat : ${dice} ! 👉 Clique sur un pion !` 
+                      : `🎲 Résultat : ${dice} ! Aucun mouvement… → Passage`
                     : '🎲 Lance le dé !'
                   : `⏳ Tour de ${COLOR_META[turn].label}…`}
           </span>
@@ -399,14 +419,31 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator
         <motion.button
           onClick={doRoll}
           disabled={!isHumanTurn || rolled || rolling || !!winner || isSpectator}
-          animate={rolling ? { rotate:[0,90,180,270,360], scale:[1,1.2,1,1.2,1] } : {}}
-          transition={{ duration:0.5, ease:'easeInOut' }}
-          className={`w-16 h-16 rounded-2xl flex items-center justify-center text-4xl font-black
-            bg-white shadow-[0_5px_0_#b0b0b0,0_10px_20px_rgba(0,0,0,0.3)]
-            active:shadow-[0_1px_0_#b0b0b0] active:translate-y-1 transition-all border border-white/30
-            ${(!isHumanTurn||rolled||winner||isSpectator)?'opacity-40 cursor-not-allowed':'cursor-pointer hover:brightness-110'}`}
+          initial={false}
+          animate={
+            rolling 
+              ? { rotate: [0, 90, 180, 270, 360], scale: [1, 1.2, 1, 1.2, 1] } 
+              : rolled 
+                ? { scale: [1, 1.3, 1], transition: { type: 'spring', damping: 8 } }
+                : { scale: 1 }
+          }
+          className={`w-20 h-20 rounded-2xl flex flex-col items-center justify-center
+            bg-white shadow-[0_6px_0_#b0b0b0,0_12px_25px_rgba(0,0,0,0.4)]
+            active:shadow-[0_1px_0_#b0b0b0] active:translate-y-1 transition-all border-2 border-white/30
+            ${(!isHumanTurn||rolled||winner||isSpectator)?'opacity-60 grayscale-[0.5]':'cursor-pointer hover:brightness-110'}`}
         >
-          {rolling ? '🎲' : (dice ? DICE_FACES[dice-1] : '🎲')}
+          <div className="text-4xl leading-none">
+            {rolling ? '🎲' : (dice ? DICE_FACES[dice-1] : '🎲')}
+          </div>
+          {dice && !rolling && (
+             <motion.div 
+               initial={{ opacity: 0, y: 5 }}
+               animate={{ opacity: 1, y: 0 }}
+               className="text-[14px] font-black text-blue-900 mt-1 bg-blue-100 px-2 rounded-md"
+             >
+               {dice}
+             </motion.div>
+          )}
         </motion.button>
       </div>
 
@@ -528,7 +565,7 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator
           const meta   = COLOR_META[color];
           const active = turn === color;
           const done   = pieces[color].filter(p => p === 57).length;
-          const isAI   = isAIMode && color === aiColor;
+          const isAI   = isAIMode && color !== myColor;
           return (
             <div key={color} className={`rounded-2xl p-3 border transition-all duration-400
               ${active
