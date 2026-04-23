@@ -112,6 +112,7 @@ class DuoMatchRequest(BaseModel):
     theme: Optional[str] = None
     friend_code: Optional[str] = None
     mode_id: Optional[str] = None
+    max_players: int = 2
 
 
 class CreateGroupSessionRequest(BaseModel):

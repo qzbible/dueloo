@@ -204,20 +204,14 @@ const Dashboard = () => {
                 exit={{ opacity: 0, scale: 0.9 }}
                 transition={{ duration: 0.3, delay: index * 0.05 }}
               >
-                <Card className={`group relative p-6 glass hover:bg-white/10 hover:translate-y-[-4px] border-white/5 transition-all duration-500 h-full flex flex-col overflow-hidden ${
-                  !mode.available && 'opacity-60 grayscale'
-                }`}>
+                <Card className={`group relative p-6 glass hover:bg-white/10 hover:translate-y-[-4px] border-white/5 transition-all duration-500 h-full flex flex-col overflow-hidden`}>
                   <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${mode.color} opacity-0 group-hover:opacity-10 blur-2xl transition-opacity`} />
                   
                   <div className="flex items-start justify-between mb-6 relative z-10">
                     <div className={`text-3xl w-14 h-14 rounded-2xl bg-gradient-to-br ${mode.color} flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform duration-300`}>
                       <span className="drop-shadow-md">{mode.icon}</span>
                     </div>
-                    {!mode.available ? (
-                      <div className="glass p-2 rounded-xl"><Lock className="w-4 h-4 text-yellow-400" /></div>
-                    ) : (
-                      <div className="glass p-2 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity"><Zap className="w-4 h-4 text-blue-400" /></div>
-                    )}
+                    <div className="glass p-2 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity"><Zap className="w-4 h-4 text-blue-400" /></div>
                   </div>
 
                   <h3 className="text-xl font-black text-white mb-2 group-hover:text-blue-100 transition-colors relative z-10">
@@ -239,20 +233,13 @@ const Dashboard = () => {
                   </div>
 
                   <Button
-                    onClick={() => mode.available && startGame(mode.mode_id)}
-                    disabled={!mode.available}
+                    onClick={() => startGame(mode.mode_id)}
                     className={`w-full h-12 rounded-xl font-black text-sm shadow-xl relative z-10 transition-all duration-300 
-                      ${mode.available 
-                        ? `bg-gradient-to-br ${mode.color} hover:brightness-110 active:scale-95 text-white` 
-                        : 'bg-white/5 text-white/20'}`}
+                      bg-gradient-to-br ${mode.color} hover:brightness-110 active:scale-95 text-white`}
                   >
-                    {mode.available ? (
-                      <span className="flex items-center gap-2">
-                        <Play className="fill-current w-4 h-4" /> Jouer
-                      </span>
-                    ) : (
-                      'Bientôt'
-                    )}
+                    <span className="flex items-center gap-2">
+                      <Play className="fill-current w-4 h-4" /> Jouer
+                    </span>
                   </Button>
                 </Card>
               </motion.div>

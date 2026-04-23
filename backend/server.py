@@ -31,7 +31,7 @@ from routes.games_routes import router as games_router
 from routes.admin_routes import router as admin_router
 
 # ── App & Socket.IO setup ────────────────────────────────────────────
-allowed_origins = os.getenv("CORS_ORIGINS", "*")
+allowed_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,http://localhost:3001")
 if allowed_origins != "*":
     allowed_origins = [o.strip() for o in allowed_origins.split(",")]
 
@@ -165,20 +165,35 @@ duo_rooms = {}
 @api_router.post("/duo/matchmaking")
 async def duo_matchmaking(request: Request, match_req: DuoMatchRequest, authorization: Optional[str] = Header(None)):
     user = await get_current_user(request, authorization)
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     
-    # Quota désactivé pour les tests
-    # if not user.is_premium:
-    #     quota = await db.duo_quotas.find_one({"user_id": user.user_id, "date": today}, {"_id": 0})
-    #     if quota and quota.get("count", 0) >= 3:
-    #         raise HTTPException(status_code=403, detail="Quota atteint. Passez Premium!")
-    
+    max_players = match_req.max_players if hasattr(match_req, 'max_players') else 2
+    if match_req.mode_id == 'ludo' and match_req.mode == 'multi':
+        max_players = 4 # Default to 4 for ludo multi if not specified
+        
     if match_req.friend_code:
         match = await db.duo_matches.find_one({"friend_code": match_req.friend_code, "status": "waiting"}, {"_id": 0})
         if match:
             match_id = match["match_id"]
-            await db.duo_matches.update_one({"match_id": match_id}, {"$set": {"player2_id": user.user_id, "player2_name": user.name, "player2_picture": user.picture, "status": "ready"}})
-            return {"match_id": match_id, "role": "player2", "status": "ready", "user_id": user.user_id, "mode_id": match.get("mode_id")}
+            # Find next available player slot
+            current_players = [p for p in range(1, 5) if match.get(f"player{p}_id")]
+            next_player_num = len(current_players) + 1
+            
+            if next_player_num > match.get("max_players", 2):
+                 raise HTTPException(status_code=400, detail="Match is full")
+                 
+            role = f"player{next_player_num}"
+            update_data = {
+                f"{role}_id": user.user_id, 
+                f"{role}_name": user.name, 
+                f"{role}_picture": user.picture
+            }
+            
+            # If all players joined, set to ready
+            if next_player_num == match.get("max_players", 2):
+                update_data["status"] = "ready"
+                
+            await db.duo_matches.update_one({"match_id": match_id}, {"$set": update_data})
+            return {"match_id": match_id, "role": role, "status": update_data.get("status", "waiting"), "user_id": user.user_id, "mode_id": match.get("mode_id")}
         else:
             raise HTTPException(status_code=404, detail="Match non trouvé")
     
@@ -187,15 +202,15 @@ async def duo_matchmaking(request: Request, match_req: DuoMatchRequest, authoriz
         "match_id": f"duo_{uuid.uuid4().hex[:12]}",
         "friend_code": friend_code,
         "mode_id": match_req.mode_id,
+        "max_players": max_players,
         "player1_id": user.user_id, "player1_name": user.name, "player1_picture": user.picture, "player1_score": 0, "player1_answers": [],
         "player2_id": None, "player2_name": None, "player2_picture": None, "player2_score": 0, "player2_answers": [],
+        "player3_id": None, "player3_name": None, "player3_picture": None, "player3_score": 0, "player3_answers": [],
+        "player4_id": None, "player4_name": None, "player4_picture": None, "player4_score": 0, "player4_answers": [],
         "status": "waiting", "current_question": 0, "questions": [],
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     await db.duo_matches.insert_one(match)
-    
-    # if not user.is_premium:
-    #     await db.duo_quotas.update_one({"user_id": user.user_id, "date": today}, {"$inc": {"count": 1}, "$setOnInsert": {"date": today}}, upsert=True)
     
     return {"match_id": match["match_id"], "friend_code": friend_code, "role": "player1", "status": "waiting", "user_id": user.user_id}
 
@@ -208,10 +223,10 @@ async def get_match_status(match_id: str, request: Request, authorization: Optio
     
     # Check if user is part of the match
     role = None
-    if user.user_id == match.get("player1_id"):
-        role = "player1"
-    elif user.user_id == match.get("player2_id"):
-        role = "player2"
+    for i in range(1, 5):
+        if user.user_id == match.get(f"player{i}_id"):
+            role = f"player{i}"
+            break
     
     if not role:
         raise HTTPException(status_code=403, detail="Vous ne faites pas partie de ce match")
@@ -569,7 +584,9 @@ async def join_duo_room(sid, data):
     await sio.emit("joined_room", {"match_id": match_id, "user_id": user_id, "role": role}, room=sid)
     
     players = [v for v in duo_rooms.get(match_id, {}).values() if v["role"] != "spectator"]
-    if len(players) >= 2:
+    match = await db.duo_matches.find_one({"match_id": match_id}, {"_id": 0})
+    max_p = match.get("max_players", 2)
+    if len(players) >= max_p:
         await sio.emit("both_ready", {"match_id": match_id}, room=match_id)
 
 @sio.event
@@ -923,6 +940,7 @@ if not origins_raw or origins_raw == '*':
     allowed_origins = [
         "http://localhost:5173",
         "http://localhost:3000",
+        "http://localhost:3001",
         "https://dev-app.dueloo.dikotech.com",
         "https://dev-admin.dueloo.dikotech.com",
         "https://dev-backend.dueloo.dikotech.com",

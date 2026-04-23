@@ -234,7 +234,10 @@ const GamePlay = () => {
       saveDuelSession(dData, sessionRes.data.session_id);
 
       if (dData) {
-        setDuelMode(prev => ({ ...prev, gameData: sessionRes.data.game_data }));
+        setDuelMode(prev => ({ ...prev, gameData: sessionRes.data.game_data, config: state?.config }));
+      } else {
+        setBothReady(true);
+        setDuelMode({ config: state?.config });
       }
 
       if (recovered) {

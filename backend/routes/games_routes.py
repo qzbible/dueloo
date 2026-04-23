@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api")
 
 @router.get("/game-modes")
 async def get_game_modes(category: Optional[str] = None):
-    query = {}
+    query = {"available": True}
     if category:
         query["category"] = category
     modes = await db.game_modes.find(query, {"_id": 0}).to_list(100)

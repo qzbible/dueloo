@@ -51,7 +51,8 @@ const GameConfig = () => {
       try {
         const response = await axios.post(`${BACKEND_URL}/api/duo/matchmaking`, { 
           mode: config.opponent === 'friend' ? 'friend' : 'random',
-          mode_id: modeId 
+          mode_id: modeId,
+          max_players: config.specifics?.max_players || 2
         }, { withCredentials: true });
         
         setMatchData(response.data);
@@ -163,6 +164,24 @@ const GameConfig = () => {
                             ))}
                         </div>
                     </div>
+
+                    {modeId === 'ludo' && config.mode === 'multi' && (
+                        <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                            <label className="text-sm font-bold text-blue-200/50 uppercase mb-4 block text-center">Nombre de joueurs</label>
+                            <div className="flex gap-4 bg-white/5 p-2 rounded-2xl border border-white/5">
+                                {[2, 3, 4].map(num => (
+                                    <button 
+                                        key={num} 
+                                        onClick={() => setConfig({...config, specifics: {...config.specifics, max_players: num}})}
+                                        className={`flex-1 py-4 rounded-xl font-black text-lg transition-all ${config.specifics.max_players === num || (!config.specifics.max_players && num === 4) ? 'bg-gradient-to-br from-blue-500 to-purple-600 text-white shadow-lg' : 'text-blue-100/40 hover:bg-white/5'}`}
+                                    >
+                                        {num}
+                                    </button>
+                                ))}
+                            </div>
+                            <p className="text-[10px] text-blue-200/40 mt-3 text-center italic">Les couleurs seront attribuées dans l'ordre : Rouge, Vert, Jaune, Bleu.</p>
+                        </div>
+                    )}
 
                     <div>
                         <label className="text-sm font-bold text-blue-200/50 uppercase mb-4 block">Temps de réflexion</label>
