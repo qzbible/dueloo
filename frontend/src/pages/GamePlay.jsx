@@ -63,11 +63,14 @@ const GamePlay = () => {
   const [showConfetti, setShowConfetti] = useState(false);
   const [duelMode, setDuelMode] = useState(null); // { matchId, role, userId }
   const [opponentMove, setOpponentMove] = useState(null);
+  const [opponentMoveQueue, setOpponentMoveQueue] = useState([]);
   const [bothReady, setBothReady] = useState(false);
   const [voiceChatKey, setVoiceChatKey] = useState(0);
   const [spectatorCount, setSpectatorCount] = useState(0);
+  const initGuardRef = useRef(false); // Prevent double-init (React StrictMode)
 
   useEffect(() => {
+    initGuardRef.current = false; // Reset guard on modeId change
     initGame();
 
     const handleRestart = () => {
@@ -81,52 +84,74 @@ const GamePlay = () => {
   const initGame = async () => {
     const queryParams = new URLSearchParams(window.location.search);
     const joinCode = queryParams.get('code');
-    const urlMatchId = queryParams.get('match'); // Optional URL param for recovery
+    const requestedRole = queryParams.get('requested_role');
+    const urlMatchId = queryParams.get('match');
 
     try {
       if (joinCode) {
+        // Guard against React StrictMode double-invoke
+        if (initGuardRef.current) {
+        }
+        initGuardRef.current = true;
+
         // Auto-join from friend link
         const response = await axios.post(`${BACKEND_URL}/api/duo/matchmaking`, { 
           mode: 'friend', 
-          friend_code: joinCode 
+          friend_code: joinCode,
+          mode_id: modeId,
+          requested_role: requestedRole
         }, { withCredentials: true });
         
         const dData = { 
           matchId: response.data.match_id, 
-          role: response.data.role, 
-          userId: response.data.user_id 
+          role: response.data.role,           // e.g. 'player3' — MUST be preserved
+          userId: response.data.user_id,
+          max_players: response.data.max_players || 2,
+          mode_id: modeId,
+          gameData: response.data.current_state  // nested, not spread
         };
-        // Update URL to include match ID for refresh recovery
+        
+        
+        // Save FIRST to localStorage BEFORE rewriting URL
+        saveDuelSession(dData);
+        
+        // Rewrite URL (drops code param — recovery will use localStorage)
         const newUrl = window.location.pathname + `?match=${dData.matchId}`;
         window.history.replaceState({ ...state, duelData: dData }, '', newUrl);
 
-        saveDuelSession(dData);
         setDuelMode(dData);
         setupSocket(dData);
         startGame(dData);
       } else {
-        // Try recovery from URL, State or LocalStorage
+        // Try recovery from: 1) Route state, 2) LocalStorage (saved right before URL rewrite), 3) API
         let dData = state?.duelData;
         
+        // LocalStorage is checked FIRST because it's saved with the correct role
+        // (the API would return the role based on DB user_id which could be wrong
+        //  if the same user has multiple tabs open)
+        if (!dData && !state?.config) {
+           const saved = localStorage.getItem('active_duel');
+           if (saved) {
+             try {
+               const parsed = JSON.parse(saved);
+               // Only use if it matches the URL's match param
+               if (!urlMatchId || urlMatchId === parsed.matchId) {
+                  dData = parsed;
+               }
+             } catch(e) { /* ignore corrupt storage */ }
+           }
+        }
+        
+        // Last resort: fetch from API (role determined by server-side user lookup)
         if (!dData && urlMatchId) {
-          // Recovery from URL match param
           const response = await axios.get(`${BACKEND_URL}/api/duo/match/${urlMatchId}`, { withCredentials: true });
           dData = {
             matchId: response.data.match_id,
             role: response.data.role,
-            userId: response.data.user_id
+            userId: response.data.user_id,
+            max_players: response.data.max_players,
+            mode_id: modeId
           };
-        }
-
-        if (!dData && !state?.config) {
-           const saved = localStorage.getItem('active_duel');
-           if (saved) {
-             const parsed = JSON.parse(saved);
-             // Ensure it's for this specific match if URL has it
-             if (!urlMatchId || urlMatchId === parsed.matchId) {
-                dData = parsed;
-             }
-           }
         }
 
         if (dData) {
@@ -181,7 +206,6 @@ const GamePlay = () => {
     });
 
     socketRef.current.on('connect', () => {
-      console.log(`Socket connected correctly. Mode: ${isRejoining ? 'REJOIN' : 'JOIN'}`);
       const event = isRejoining ? 'rejoin_duo_room' : 'join_duo_room';
       socketRef.current.emit(event, {
         match_id: dData.matchId,
@@ -190,21 +214,31 @@ const GamePlay = () => {
       });
     });
 
+    socketRef.current.on('joined_room', (data) => {
+    });
+
+    socketRef.current.on('player_rejoined', (data) => {
+    });
+
     socketRef.current.on('opponent_move', (data) => {
+      console.log('[Socket][GamePlay] opponent_move received:', data);
       setOpponentMove(data);
+      setOpponentMoveQueue(prev => [...prev, data]);
     });
 
     socketRef.current.on('both_ready', () => {
       setBothReady(true);
     });
 
-    socketRef.current.on('player_rejoined', (data) => {
-      console.log(`Opponent rejoined: ${data.role}`);
-      // Removed setVoiceChatKey() here to prevent aggressive WebRTC tear-down
-      // when the opponent's connection flaps (e.g. falling back to polling).
+    socketRef.current.on('game_start', (data) => {
+      setDuelMode(prev => ({
+        ...prev,
+        gameData: data.game_data
+      }));
     });
 
     socketRef.current.on('spectator_count', (data) => {
+      console.log('[Socket][GamePlay] spectator_count:', data.count);
       setSpectatorCount(data.count);
     });
   };
@@ -217,13 +251,19 @@ const GamePlay = () => {
 
   const startGame = async (dData = null, recovered = null) => {
     try {
+      setOpponentMoveQueue([]); // Flush ghosts from previous games
       const [sessionRes, modeRes] = await Promise.all([
+
         axios.post(
           `${BACKEND_URL}/api/games/start`,
           { 
             mode_id: modeId, 
             lang,
-            config: state?.config || (dData ? { opponent: 'human' } : {}),
+            config: {
+              ...(state?.config || (dData ? { opponent: 'human' } : {})),
+              match_id: dData?.matchId || state?.config?.match_id,
+              max_players: dData?.max_players  // Pass max_players to session
+            },
           },
           { withCredentials: true }
         ),
@@ -231,22 +271,40 @@ const GamePlay = () => {
       ]);
       
       setGameSession(sessionRes.data.session_id);
-      saveDuelSession(dData, sessionRes.data.session_id);
+
+      const matchId = sessionRes.data.match_id;
 
       if (dData && dData.matchId) {
+        saveDuelSession(dData, sessionRes.data.session_id);
         setDuelMode(prev => ({ 
           ...prev, 
           matchId: dData.matchId,
-          role: dData.role,
+          role: dData.role,              // ALWAYS preserved from original join
           userId: dData.userId,
+          max_players: dData.max_players || prev?.max_players || 2,  // ALWAYS preserved
+          mode_id: dData.mode_id || modeId,
           gameData: sessionRes.data.game_data, 
           config: state?.config 
         }));
+      } else if (matchId) {
+        // Solo/AI game with Live Spectator support
+        const soloData = {
+          matchId: matchId,
+          role: 'player1',
+          userId: 'solo_player',
+          config: state?.config || { opponent: 'ia' },
+          gameData: sessionRes.data.game_data
+        };
+        saveDuelSession(soloData, sessionRes.data.session_id);
+        setDuelMode(soloData);
+        setBothReady(true);
+        setupSocket(soloData); // Initialize live sync even for solo
       } else {
         setBothReady(true);
         // Ensure we DON'T have a matchId if it's AI mode
         setDuelMode({ 
-          config: state?.config || { opponent: 'ia' } 
+          config: state?.config || { opponent: 'ia' },
+          gameData: sessionRes.data.game_data
         });
       }
 
@@ -352,8 +410,10 @@ const GamePlay = () => {
         duelMode={duelMode}
         gameData={duelMode?.gameData || gameMode?.game_data}
         opponentMove={opponentMove}
+        opponentMoveQueue={opponentMoveQueue}
         onMove={onPlayerMove}
         bothReady={bothReady}
+        isSpectator={duelMode?.role === 'spectator'}
       />
     );
   };

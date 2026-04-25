@@ -166,34 +166,111 @@ duo_rooms = {}
 async def duo_matchmaking(request: Request, match_req: DuoMatchRequest, authorization: Optional[str] = Header(None)):
     user = await get_current_user(request, authorization)
     
-    max_players = match_req.max_players if hasattr(match_req, 'max_players') else 2
-    if match_req.mode_id == 'ludo' and match_req.mode == 'multi':
-        max_players = 4 # Default to 4 for ludo multi if not specified
+    # Determine max_players with correct defaults per game mode
+    max_players = match_req.max_players  # Could be None if not sent
+    if max_players is None or max_players < 2:
+        # Ludo supports 2-4 players; default to 4 to be most permissive
+        max_players = 4 if match_req.mode_id == 'ludo' else 2
+    
         
     if match_req.friend_code:
-        match = await db.duo_matches.find_one({"friend_code": match_req.friend_code, "status": "waiting"}, {"_id": 0})
+        # Search for the match by friend code (any status)
+        match = await db.duo_matches.find_one({"friend_code": match_req.friend_code}, {"_id": 0})
         if match:
             match_id = match["match_id"]
-            # Find next available player slot
-            current_players = [p for p in range(1, 5) if match.get(f"player{p}_id")]
-            next_player_num = len(current_players) + 1
             
-            if next_player_num > match.get("max_players", 2):
-                 raise HTTPException(status_code=400, detail="Match is full")
-                 
-            role = f"player{next_player_num}"
-            update_data = {
-                f"{role}_id": user.user_id, 
-                f"{role}_name": user.name, 
-                f"{role}_picture": user.picture
-            }
+            # 1. Check if user is already in this match (Allow rejoining even if 'playing')
+            existing_role = None
+            if user.user_id:
+                for p in range(1, 5):
+                    # Strict check: only match if BOTH are not None
+                    p_id = match.get(f"player{p}_id")
+                    if p_id and p_id == user.user_id:
+                        existing_role = f"player{p}"
+                        break
+
             
-            # If all players joined, set to ready
-            if next_player_num == match.get("max_players", 2):
-                update_data["status"] = "ready"
+            if existing_role:
+                return {
+                    "match_id": match_id, 
+                    "role": existing_role, 
+                    "status": match["status"], 
+                    "user_id": user.user_id, 
+                    "mode_id": match.get("mode_id"),
+                    "max_players": match.get("max_players", 2)
+                }
+
+            # 2. Allow joining if status is 'waiting' OR if it's 'ready'/'playing' but not full.
+            # Only block if it's 'completed'.
+            if match.get("status") == "completed":
+                 raise HTTPException(status_code=400, detail="Ce match est déjà terminé")
+
+            # Robust check for Ludo: use match value, default to 4
+            effective_max = match.get("max_players", 2)
+            if match.get("mode_id") == 'ludo' and "max_players" not in match:
+                effective_max = 4
+
+            # Atomic join loop
+            assigned_role = None
+            req_role = getattr(match_req, 'requested_role', None)
+
+            for _ in range(3):
+                # Double check to prevent same user from taking multiple slots
+                for p in range(1, 5):
+                    if match.get(f"player{p}_id") == user.user_id:
+                        assigned_role = f"player{p}"; break
+                if assigned_role: break
+
+                role = None
+                p_idx = 1
                 
-            await db.duo_matches.update_one({"match_id": match_id}, {"$set": update_data})
-            return {"match_id": match_id, "role": role, "status": update_data.get("status", "waiting"), "user_id": user.user_id, "mode_id": match.get("mode_id")}
+                # Priority: if a specific role was requested and is empty
+                if req_role and req_role.startswith("player") and not match.get(f"{req_role}_id"):
+                    # Basic bounds check (e.g. don't join player4 if max_players is 2)
+                    r_num = int(req_role.replace("player", ""))
+                    if r_num <= effective_max:
+                        role = req_role
+                        p_idx = r_num
+
+                # Fallback: Seek the first truly empty slot
+                if not role:
+                    for p in range(1, effective_max + 1):
+                        if not match.get(f"player{p}_id"):
+                            role = f"player{p}"; p_idx = p
+                            break
+                
+                if not role: raise HTTPException(400, "Complet")
+                
+                up_data = {f"{role}_id": user.user_id, f"{role}_name": user.name, f"{role}_picture": user.picture}
+                # Do NOT set status here - we'll set it after verifying all slots are filled
+                
+                res = await db.duo_matches.update_one({"match_id": match_id, f"{role}_id": None}, {"$set": up_data})
+                if res.modified_count > 0:
+                    assigned_role = role; break
+                else:
+                    match = await db.duo_matches.find_one({"match_id": match_id}, {"_id": 0})
+            
+            if not assigned_role: raise HTTPException(400, "Erreur join")
+
+            # Re-fetch to get the latest match state after the join
+            updated_match = await db.duo_matches.find_one({"match_id": match_id}, {"_id": 0})
+            real_max = updated_match.get("max_players", 2)
+            
+            # Count how many slots are now filled
+            filled_slots = sum(1 for p in range(1, real_max + 1) if updated_match.get(f"player{p}_id"))
+            all_filled = filled_slots >= real_max
+            
+            # Only mark ready when ALL players have joined
+            if all_filled:
+                await db.duo_matches.update_one({"match_id": match_id}, {"$set": {"status": "ready"}})
+            
+            return {
+                "match_id": match_id, "role": assigned_role, 
+                "status": "ready" if all_filled else "waiting",
+                "user_id": user.user_id, "mode_id": match.get("mode_id"), 
+                "max_players": real_max,
+                "current_state": {"game_data": updated_match.get("game_data"), "found_words": updated_match.get("found_words", []), "history": updated_match.get("history", [])}
+            }
         else:
             raise HTTPException(status_code=404, detail="Match non trouvé")
     
@@ -212,7 +289,8 @@ async def duo_matchmaking(request: Request, match_req: DuoMatchRequest, authoriz
     }
     await db.duo_matches.insert_one(match)
     
-    return {"match_id": match["match_id"], "friend_code": friend_code, "role": "player1", "status": "waiting", "user_id": user.user_id}
+    return {"match_id": match["match_id"], "friend_code": friend_code, "role": "player1", "status": "waiting", "user_id": user.user_id, "max_players": max_players}
+
 
 @api_router.get("/duo/match/{match_id}")
 async def get_match_status(match_id: str, request: Request, authorization: Optional[str] = Header(None)):
@@ -236,8 +314,13 @@ async def get_match_status(match_id: str, request: Request, authorization: Optio
         "role": role,
         "status": match.get("status"),
         "mode_id": match.get("mode_id"),
+        "max_players": match.get("max_players", 2),
         "user_id": user.user_id,
-        "current_state": match # Full state for recovery
+        "current_state": {
+            "game_data": match.get("game_data"),
+            "found_words": match.get("found_words", []),
+            "history": match.get("history", [])
+        }
     }
 
 # ── Duo Static Routes (BEFORE dynamic) ──────────────────────────────
@@ -247,7 +330,15 @@ async def get_duo_history(request: Request, authorization: Optional[str] = Heade
     if not user.is_premium:
         raise HTTPException(status_code=403, detail="Fonctionnalité Premium")
     matches = await db.duo_matches.find(
-        {"$or": [{"player1_id": user.user_id}, {"player2_id": user.user_id}], "status": "completed"},
+        {
+            "$or": [
+                {"player1_id": user.user_id}, 
+                {"player2_id": user.user_id},
+                {"player3_id": user.user_id},
+                {"player4_id": user.user_id}
+            ], 
+            "status": "completed"
+        },
         {"_id": 0}
     ).sort("created_at", -1).to_list(20)
     return matches
@@ -255,7 +346,15 @@ async def get_duo_history(request: Request, authorization: Optional[str] = Heade
 @api_router.get("/duo/stats")
 async def get_duo_stats(request: Request, authorization: Optional[str] = Header(None)):
     user = await get_current_user(request, authorization)
-    total = await db.duo_matches.count_documents({"$or": [{"player1_id": user.user_id}, {"player2_id": user.user_id}], "status": "completed"})
+    total = await db.duo_matches.count_documents({
+        "$or": [
+            {"player1_id": user.user_id}, 
+            {"player2_id": user.user_id},
+            {"player3_id": user.user_id},
+            {"player4_id": user.user_id}
+        ], 
+        "status": "completed"
+    })
     wins = await db.duo_matches.count_documents({"winner_id": user.user_id})
     leaderboard_entry = await db.duo_leaderboard.find_one({"user_id": user.user_id}, {"_id": 0})
     mmr = leaderboard_entry.get("mmr", 1000) if leaderboard_entry else 1000
@@ -268,17 +367,31 @@ async def get_duo_leaderboard():
 
 @api_router.get("/duo/active-matches")
 async def get_active_matches(request: Request):
+    # Include matches that are playing and have either a second player or are AI matches
     matches = await db.duo_matches.find(
-        {"status": {"$in": ["ready", "playing"]}, "player2_id": {"$ne": None}},
-        {"_id": 0, "match_id": 1, "player1_name": 1, "player2_name": 1, "player1_score": 1, "player2_score": 1, "current_question": 1, "status": 1, "mode_id": 1}
+        {
+            "status": {"$in": ["ready", "playing"]},
+            "$or": [
+                {"player2_id": {"$ne": None}},
+                {"player2_id": "ia"}, # Redundant but safe
+                {"is_solo": True}
+            ]
+        },
+        {"_id": 0, "match_id": 1, "player1_name": 1, "player2_name": 1, "player1_score": 1, "player2_score": 1, "current_question": 1, "status": 1, "mode_id": 1, "is_solo": 1}
     ).to_list(100)
     
     active_live_matches = []
     for match in matches:
         match_id = match["match_id"]
-        # Ensure both players have active websocket connections
+        # Ensure players have active websocket connections
         connected_players = [p for p in duo_rooms.get(match_id, {}).values() if p.get("role") in ["player1", "player2", "player"]]
-        if len(connected_players) >= 2:
+        
+        # If it's a solo/AI match, we only need 1 player connected
+        if match.get("is_solo"):
+            if len(connected_players) >= 1:
+                active_live_matches.append(match)
+        # If it's a duo match, we need both
+        elif len(connected_players) >= 2:
             active_live_matches.append(match)
             
     return active_live_matches[:20]
@@ -551,18 +664,16 @@ async def check_achievements(request: Request, authorization: Optional[str] = He
 # ── Socket.IO Events ────────────────────────────────────────────────
 @sio.event
 async def connect(sid, environ):
-    logging.info(f"Client connected: {sid}")
+    pass
 
 @sio.event
 async def disconnect(sid):
-    logging.info(f"Client disconnected: {sid}")
     # Cleanup duo_rooms
     for match_id in list(duo_rooms.keys()):
         if sid in duo_rooms[match_id]:
             role = duo_rooms[match_id][sid].get("role")
             user_id = duo_rooms[match_id][sid].get("user_id")
             del duo_rooms[match_id][sid]
-            logging.info(f"Removed {role} {user_id} (sid: {sid}) from match {match_id}")
             
             if role == "spectator":
                 spectators = [v for v in duo_rooms.get(match_id, {}).values() if v.get("role") == "spectator"]
@@ -577,16 +688,49 @@ async def join_duo_room(sid, data):
     match_id = data.get("match_id")
     user_id = data.get("user_id")
     role = data.get("role", "player")
+
+    match = await db.duo_matches.find_one({"match_id": match_id}, {"_id": 0})
+    if not match:
+        logging.warning(f"Join failed: Match {match_id} not found")
+        return
+
+    # Role verification: find the actual slot for this user
+    actual_role = "spectator"
+    for i in range(1, 5):
+        if match.get(f"player{i}_id") == user_id:
+            actual_role = f"player{i}"
+            break
     
+    
+    # If the client claimed a role but we found a different one (or they are spectator)
+    if role.startswith("player") and actual_role != role:
+        role = actual_role
+
     await sio.enter_room(sid, match_id)
     duo_rooms.setdefault(match_id, {})[sid] = {"user_id": user_id, "role": role}
     
     await sio.emit("joined_room", {"match_id": match_id, "user_id": user_id, "role": role}, room=sid)
     
-    players = [v for v in duo_rooms.get(match_id, {}).values() if v["role"] != "spectator"]
-    match = await db.duo_matches.find_one({"match_id": match_id}, {"_id": 0})
-    max_p = match.get("max_players", 2)
-    if len(players) >= max_p:
+    # Broadcast current lobby state (who is in which slot according to DB)
+    players_in_lobby = []
+    for i in range(1, 5):
+        pid = match.get(f"player{i}_id")
+        if pid:
+            players_in_lobby.append({
+                "role": f"player{i}",
+                "name": match.get(f"player{i}_name"),
+                "picture": match.get(f"player{i}_picture"),
+                "user_id": pid
+            })
+            
+    # Robust max_players: always read from DB, never guess
+    max_p = match.get("max_players") or 2
+        
+    await sio.emit("lobby_update", {"match_id": match_id, "players": players_in_lobby, "max_players": max_p}, room=match_id)
+
+    # Signal 'both_ready' ONLY when all required unique players are connected
+    unique_users = {v["user_id"] for v in duo_rooms.get(match_id, {}).values() if v["role"].startswith("player")}
+    if len(unique_users) >= max_p:
         await sio.emit("both_ready", {"match_id": match_id}, room=match_id)
 
 @sio.event
@@ -595,16 +739,64 @@ async def rejoin_duo_room(sid, data):
     user_id = data.get("user_id")
     role = data.get("role")
     
+    match = await db.duo_matches.find_one({"match_id": match_id}, {"_id": 0})
+    if not match: return
+
+    # Role verification
+    actual_role = "spectator"
+    for i in range(1, 5):
+        if match.get(f"player{i}_id") == user_id:
+            actual_role = f"player{i}"
+            break
+    
+    if role and role.startswith("player") and actual_role != role:
+        role = actual_role
+
     await sio.enter_room(sid, match_id)
     duo_rooms.setdefault(match_id, {})[sid] = {"user_id": user_id, "role": role}
     
-    print(f"User {user_id} rejoined room {match_id} as {role}")
     await sio.emit("player_rejoined", {"role": role, "user_id": user_id}, room=match_id, skip_sid=sid)
-    
-    # Trigger both_ready to re-sync state for the returning player
-    players = [v for v in duo_rooms.get(match_id, {}).values() if v["role"] != "spectator"]
-    if len(players) >= 2:
+
+    # Broadcast current lobby state
+    match = await db.duo_matches.find_one({"match_id": match_id}, {"_id": 0})
+    if match:
+        players_in_lobby = []
+        for i in range(1, 5):
+            pid = match.get(f"player{i}_id")
+            if pid:
+                players_in_lobby.append({
+                    "role": f"player{i}",
+                    "name": match.get(f"player{i}_name"),
+                    "picture": match.get(f"player{i}_picture"),
+                    "user_id": pid
+                })
+        max_p = match.get("max_players") or 2
+        await sio.emit("lobby_update", {"match_id": match_id, "players": players_in_lobby, "max_players": max_p}, room=match_id)
+
+    # Unique-ify by user_id to prevent multiple tabs from counting as multiple players
+    unique_users = {v["user_id"] for v in duo_rooms.get(match_id, {}).values() if v["role"].startswith("player")}
+    max_p = match.get("max_players") or 2
+        
+    if len(unique_users) >= max_p:
         await sio.emit("both_ready", {"match_id": match_id}, room=match_id)
+
+@sio.event
+async def force_start_match(sid, data):
+    match_id = data.get("match_id")
+    match = await db.duo_matches.find_one({"match_id": match_id})
+    if not match: return
+    
+    # Only player1 (host) can force start
+    room_info = duo_rooms.get(match_id, {}).get(sid)
+    if not room_info or room_info["role"] != "player1":
+        return
+        
+    unique_users = {v["user_id"] for v in duo_rooms.get(match_id, {}).values() if v["role"].startswith("player")}
+    max_p = match.get("max_players") or 2
+        
+    if len(unique_users) >= max_p:
+        await sio.emit("both_ready", {"match_id": match_id}, room=match_id)
+
 
 @sio.event
 async def spectate_match(sid, data):
@@ -661,6 +853,19 @@ async def player_ready(sid, data):
     if not match:
         return
     
+    mode_id = match.get("mode_id")
+    
+    if mode_id == "mots_caches":
+        if not match.get("game_data"):
+            # Initialize grid using the same logic as routes
+            from routes.games_routes import generate_game_data
+            game_data = await generate_game_data(mode_id, "fr", match.get("config", {}))
+            await db.duo_matches.update_one({"match_id": match_id}, {"$set": {"game_data": game_data, "status": "playing"}})
+            match["game_data"] = game_data
+        
+        await sio.emit("game_start", {"match_id": match_id, "game_data": match["game_data"]}, room=match_id)
+        return
+
     if not match.get("questions"):
         questions = get_quiz_vrai_faux("fr").get("statements", [])[:5]
         formatted = [{"text": q["text"], "options": ["Vrai", "Faux"], "correct_answer": 0 if q["answer"] else 1} for q in questions]
@@ -703,44 +908,80 @@ async def submit_answer(sid, data):
     
     await sio.emit("answer_received", {"user_id": user_id, "role": role, "points": points, "is_correct": is_correct, "question_index": q_idx}, room=match_id)
     
-    p1_answers = match.get("player1_answers", []) if role == "player2" else answers
-    p2_answers = match.get("player2_answers", []) if role == "player1" else answers
+    max_p = match.get("max_players", 2)
+    all_players_answered = True
+    round_results = {"question_index": q_idx, "correct_answer": questions[q_idx].get("correct_answer")}
     
-    p1_answered = any(a["question_index"] == q_idx for a in p1_answers)
-    p2_answered = any(a["question_index"] == q_idx for a in p2_answers)
-    
-    if p1_answered and p2_answered:
-        await sio.emit("round_results", {"question_index": q_idx, "player1": {"total_score": match.get("player1_score", 0)}, "player2": {"total_score": match.get("player2_score", 0)}, "correct_answer": questions[q_idx].get("correct_answer")}, room=match_id)
+    for i in range(1, max_p + 1):
+        pid = match.get(f"player{i}_id")
+        if not pid: continue
+        
+        # Check if this player has answered this question
+        p_ans = answers if role == f"player{i}" else match.get(f"player{i}_answers", [])
+        if not any(a["question_index"] == q_idx for a in p_ans):
+            all_players_answered = False
+            break
+        
+        round_results[f"player{i}"] = {"total_score": match.get(f"player{i}_score", 0)}
+
+    if all_players_answered:
+        await sio.emit("round_results", round_results, room=match_id)
         
         next_q = q_idx + 1
         await db.duo_matches.update_one({"match_id": match_id}, {"$set": {"current_question": next_q}})
         
         if next_q >= len(questions):
-            p1_score = match.get("player1_score", 0)
-            p2_score = match.get("player2_score", 0)
-            winner = "player1" if p1_score > p2_score else "player2" if p2_score > p1_score else "draw"
-            winner_id = match.get(f"{winner}_id") if winner != "draw" else None
-            
-            await db.duo_matches.update_one({"match_id": match_id}, {"$set": {"status": "completed", "winner": winner, "winner_id": winner_id}})
-            
-            # Update MMR
-            for pid in [match.get("player1_id"), match.get("player2_id")]:
+            # Determine winner(s) among all players
+            player_scores = []
+            for i in range(1, max_p + 1):
+                pid = match.get(f"player{i}_id")
                 if pid:
-                    await db.duo_leaderboard.update_one(
-                        {"user_id": pid},
-                        {"$setOnInsert": {"user_id": pid, "mmr": 1000, "wins": 0, "losses": 0, "draws": 0, "name": match.get("player1_name") if pid == match.get("player1_id") else match.get("player2_name")}},
-                        upsert=True
-                    )
+                    player_scores.append({
+                        "role": f"player{i}",
+                        "id": pid,
+                        "score": match.get(f"player{i}_score", 0),
+                        "name": match.get(f"player{i}_name")
+                    })
             
-            if winner != "draw":
-                await db.duo_leaderboard.update_one({"user_id": winner_id}, {"$inc": {"mmr": 25, "wins": 1}})
-                loser_id = match.get("player2_id") if winner == "player1" else match.get("player1_id")
-                if loser_id:
-                    await db.duo_leaderboard.update_one({"user_id": loser_id}, {"$inc": {"mmr": -15, "losses": 1}})
-            else:
-                for pid in [match.get("player1_id"), match.get("player2_id")]:
-                    if pid:
-                        await db.duo_leaderboard.update_one({"user_id": pid}, {"$inc": {"draws": 1}})
+            # Sort by score descending
+            player_scores.sort(key=lambda x: x["score"], reverse=True)
+            
+            highest_score = player_scores[0]["score"]
+            winners = [p for p in player_scores if p["score"] == highest_score]
+            
+            is_draw = len(winners) > 1
+            winner_role = winners[0]["role"] if not is_draw else "draw"
+            winner_id = winners[0]["id"] if not is_draw else None
+            
+            await db.duo_matches.update_one(
+                {"match_id": match_id}, 
+                {"$set": {"status": "completed", "winner": winner_role, "winner_id": winner_id}}
+            )
+            
+            # Update MMR and Results for all participants
+            for p in player_scores:
+                pid = p["id"]
+                is_this_winner = not is_draw and pid == winner_id
+                
+                await db.duo_leaderboard.update_one(
+                    {"user_id": pid},
+                    {"$setOnInsert": {"user_id": pid, "mmr": 1000, "wins": 0, "losses": 0, "draws": 0, "name": p["name"]}},
+                    upsert=True
+                )
+                
+                if is_draw:
+                    await db.duo_leaderboard.update_one({"user_id": pid}, {"$inc": {"draws": 1}})
+                elif is_this_winner:
+                    await db.duo_leaderboard.update_one({"user_id": pid}, {"$inc": {"mmr": 25, "wins": 1}})
+                else:
+                    await db.duo_leaderboard.update_one({"user_id": pid}, {"$inc": {"mmr": -15, "losses": 1}})
+            
+            # Emit final results
+            final_results = {"winner": winner_role}
+            for p in player_scores:
+                final_results[f"{p['role']}_score"] = p["score"]
+                
+            await sio.emit("game_end", final_results, room=match_id)
             
             # Persist social metrics from Redis to MongoDB
             social_likes = interaction_manager.get_likes(match_id)
@@ -782,6 +1023,69 @@ async def game_move(sid, data):
             {"match_id": match_id},
             {"$set": update_fields}
         )
+        
+    if "type" in data and data["type"] == "ludo_state":
+        winner_color = data.get("winner")
+        update_fields = {
+            "game_data.pieces": data.get("pieces"),
+            "game_data.turn": data.get("turn"),
+            "game_data.dice": data.get("dice"),
+            "game_data.rolled": data.get("rolled"),
+            "game_data.winner": winner_color
+        }
+        
+        await db.duo_matches.update_one({"match_id": match_id}, {"$set": update_fields})
+        
+        if winner_color:
+            # End of game detected for Ludo
+            match = await db.duo_matches.find_one({"match_id": match_id}, {"_id": 0})
+            if match and match.get("status") != "completed":
+                max_p = match.get("max_players", 2)
+                # Map color back to role (Sync with Ludo.jsx ROLE_COLOR)
+                ROLE_MAP = {2: {'R':'player1', 'B':'player2'},
+                            3: {'R':'player1', 'B':'player2', 'G':'player3'},
+                            4: {'R':'player1', 'G':'player2', 'Y':'player3', 'B':'player4'}}
+                
+                winner_role = ROLE_MAP.get(max_p, ROLE_MAP[2]).get(winner_color)
+                winner_id = match.get(f"{winner_role}_id") if winner_role else None
+                
+                if winner_id:
+                    await db.duo_matches.update_one(
+                        {"match_id": match_id}, 
+                        {"$set": {"status": "completed", "winner": winner_role, "winner_id": winner_id}}
+                    )
+                    
+                    # Reward all players
+                    for i in range(1, max_p + 1):
+                        pid = match.get(f"player{i}_id")
+                        if pid:
+                            is_this_win = (pid == winner_id)
+                            await db.duo_leaderboard.update_one(
+                                {"user_id": pid},
+                                {"$setOnInsert": {"user_id": pid, "mmr": 1000, "wins": 0, "losses": 0, "draws": 0, "name": match.get(f"player{i}_name")}},
+                                upsert=True
+                            )
+                            if is_this_win:
+                                await db.duo_leaderboard.update_one({"user_id": pid}, {"$inc": {"mmr": 25, "wins": 1}})
+                            else:
+                                await db.duo_leaderboard.update_one({"user_id": pid}, {"$inc": {"mmr": -15, "losses": 1}})
+                                
+                    await sio.emit("game_end", {"winner": winner_role, "winner_id": winner_id}, room=match_id)
+    
+    if "wordFound" in data:
+        # Save found word and its cells to the match record for spectators
+        await db.duo_matches.update_one(
+            {"match_id": match_id},
+            {
+                "$push": {
+                    "found_words": {
+                        "word": data["wordFound"],
+                        "cells": data["selectedCells"],
+                        "role": data.get("role")
+                    }
+                }
+            }
+        )
 
 # WebRTC Signaling
 @sio.event
@@ -789,7 +1093,6 @@ async def webrtc_offer(sid, data):
     match_id = data.get("match_id")
     target_sid = data.get("target_sid")
     data["from_sid"] = sid
-    logging.info(f"WebRTC Offer from {sid} to {target_sid or match_id}")
     if target_sid:
         await sio.emit("webrtc_offer", data, room=target_sid)
     else:
@@ -800,7 +1103,6 @@ async def webrtc_answer(sid, data):
     match_id = data.get("match_id")
     target_sid = data.get("target_sid")
     data["from_sid"] = sid
-    logging.info(f"WebRTC Answer from {sid} to {target_sid or match_id}")
     if target_sid:
         await sio.emit("webrtc_answer", data, room=target_sid)
     else:
@@ -830,33 +1132,46 @@ async def webrtc_ready(sid, data):
     if sid not in room_data:
         match = await db.duo_matches.find_one({"match_id": match_id}, {"_id": 0})
         if match:
-            if user_id == match.get("player1_id"):
-                role = "player1"
-            elif user_id == match.get("player2_id"):
-                role = "player2"
-            else:
-                return # Not part of this match
+            role = "spectator"
+            for i in range(1, 5):
+                if user_id == match.get(f"player{i}_id"):
+                    role = f"player{i}"
+                    break
+            
+            if role == "spectator":
+                return # Only players trigger start_webrtc for now
+            
             room_data[sid] = {"user_id": user_id, "role": role}
             await sio.enter_room(sid, match_id)
+            # Re-fetch match to ensure we have latest max_players
+            max_p = match.get("max_players") or 2
+        else:
+            return
+    else:
+        # If already tracked, we still need max_players for the check
+        match = await db.duo_matches.find_one({"match_id": match_id}, {"max_players": 1})
+        max_p = match.get("max_players") or 2
     
-    if sid in room_data:
-        room_data[sid]["webrtc_ready"] = True
+    room_data[sid]["webrtc_ready"] = True
     
-    ready_players = [v for v in room_data.values() if v.get("webrtc_ready")]
-    print(f"WebRTC ready: {len(ready_players)}/2 players ready in {match_id}")
-    if len(ready_players) >= 2:
-        p1_sid = next((k for k, v in room_data.items() if v.get("role") == "player1"), None)
-        p2_sid = next((k for k, v in room_data.items() if v.get("role") == "player2"), None)
+    ready_players = [v for v in room_data.values() if v.get("webrtc_ready") and v.get("role", "").startswith("player")]
+    
+    if len(ready_players) >= max_p:
+        # Collect all player SIDs
+        player_sids = {}
+        for k, v in room_data.items():
+            r = v.get("role")
+            if r and r.startswith("player"):
+                player_sids[f"{r}_sid"] = k
+        
         await sio.emit("start_webrtc", {
             "match_id": match_id,
-            "player1_sid": p1_sid,
-            "player2_sid": p2_sid
+            **player_sids
         }, room=match_id)
 
 @sio.event
 async def spectator_voice_ready(sid, data):
     match_id = data.get("match_id")
-    logging.info(f"Spectator {sid} ready for voice in match {match_id}")
     # Notify players that a spectator is ready to receive audio
     await sio.emit("spectator_voice_ready", {"match_id": match_id, "spectator_sid": sid}, room=match_id)
 

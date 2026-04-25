@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Gamepad2, ToggleRight, ToggleLeft, HelpCircle, PlusCircle, Edit3, Trash2, Search, X, Save, CheckCircle, Loader2 } from 'lucide-react';
+import { Gamepad2, ToggleRight, ToggleLeft, HelpCircle, PlusCircle, Edit3, Trash2, Search, X, Save, CheckCircle, Loader2, Wand2 } from 'lucide-react';
+import { AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '';
@@ -144,6 +145,18 @@ const QuestionsTab = () => {
   const [filterLang, setFilterLang] = useState('');
   const [filterApproved, setFilterApproved] = useState('');
 
+  // AI Generation state
+  const [showGenerator, setShowGenerator] = useState(false);
+  const [genCategory, setGenCategory] = useState('vrai_faux');
+  const [genLang, setGenLang] = useState('fr');
+  const [numQ, setNumQ] = useState(5);
+  const [topic, setTopic] = useState('');
+  const [generating, setGenerating] = useState(false);
+  const [generatedQuestions, setGeneratedQuestions] = useState([]);
+  const [genError, setGenError] = useState('');
+  const [saveMsg, setSaveMsg] = useState('');
+  const [savingBulk, setSavingBulk] = useState(false);
+
   // Import state
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
@@ -246,6 +259,64 @@ const QuestionsTab = () => {
 
   const allCategories = Object.keys(CATEGORY_LABELS);
 
+  const handleGenerate = async () => {
+    setGenerating(true);
+    setGenError('');
+    setGeneratedQuestions([]);
+    try {
+      const token = localStorage.getItem('adminToken');
+      const res = await axios.post(`${BACKEND_URL}/api/admin/generate`, {
+        category: genCategory,
+        lang: genLang,
+        num_questions: numQ,
+        topic: topic || undefined
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
+        withCredentials: true
+      });
+      setGeneratedQuestions(res.data.questions);
+    } catch (e) {
+      setGenError(e.response?.data?.detail || 'Erreur lors de la génération');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleSaveBulk = async () => {
+    if (!generatedQuestions.length) return;
+    setSavingBulk(true);
+    try {
+      const token = localStorage.getItem('adminToken');
+      const approved = generatedQuestions.map(q => ({ ...q, approved: true }));
+      await axios.post(`${BACKEND_URL}/api/admin/questions/bulk`, { questions: approved }, {
+        headers: { Authorization: `Bearer ${token}` },
+        withCredentials: true
+      });
+      setSaveMsg(`Succès ! Les questions ont été sauvegardées.`);
+      setGeneratedQuestions([]);
+      fetchQuestions();
+      setTimeout(() => setSaveMsg(''), 3000);
+    } catch (e) {
+      setSaveMsg('Erreur lors de la sauvegarde');
+    } finally {
+      setSavingBulk(false);
+    }
+  };
+
+  const handleSaveOneGen = async (q) => {
+    try {
+      const token = localStorage.getItem('adminToken');
+      await axios.post(`${BACKEND_URL}/api/admin/questions`, { ...q, approved: true }, {
+        headers: { Authorization: `Bearer ${token}` },
+        withCredentials: true
+      });
+      setGeneratedQuestions(prev => prev.filter(x => x.question_id !== q.question_id));
+      fetchQuestions();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header bar */}
@@ -298,7 +369,118 @@ const QuestionsTab = () => {
         </select>
 
         {loading && <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />}
+        
+        <button 
+          onClick={() => setShowGenerator(!showGenerator)}
+          className={`ml-auto px-5 py-3 rounded-xl font-black text-xs uppercase tracking-widest flex items-center gap-2 transition-all shadow-lg ${showGenerator ? 'bg-slate-700 text-white' : 'bg-gradient-to-r from-yellow-500 to-orange-500 text-black shadow-orange-500/20'}`}
+        >
+          <Wand2 className="w-4 h-4" />
+          {showGenerator ? 'Fermer le Générateur' : 'Générer avec GPT-4o'}
+        </button>
       </div>
+
+      {/* AI Generation Panel */}
+      <AnimatePresence>
+        {showGenerator && (
+          <div className="bg-slate-800/80 border border-yellow-500/30 rounded-2xl p-6 overflow-hidden shadow-2xl shadow-orange-500/5">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-xl">✨</div>
+              <div>
+                <h3 className="font-black text-white text-sm">Générateur de Questions Intelligent</h3>
+                <p className="text-xs text-slate-500">Utilisez GPT-4o pour créer du contenu biblique instantanément</p>
+              </div>
+            </div>
+
+            <div className="grid md:grid-cols-4 gap-4 mb-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Catégorie</label>
+                <select 
+                  value={genCategory} 
+                  onChange={e => setGenCategory(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-900/50 border border-white/5 rounded-xl text-sm text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
+                >
+                  {allCategories.map(cat => <option key={cat} value={cat}>{CATEGORY_LABELS[cat]}</option>)}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Langue</label>
+                <div className="flex gap-1">
+                  {['fr', 'en'].map(l => (
+                    <button key={l} onClick={() => setGenLang(l)}
+                      className={`flex-1 py-2.5 rounded-xl font-bold text-xs transition-all border ${genLang === l ? 'bg-white/10 border-white/20 text-white' : 'bg-transparent border-white/5 text-slate-500 hover:text-slate-300'}`}
+                    >
+                      {l === 'fr' ? '🇫🇷 FR' : '🇬🇧 EN'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Quantité (1-10)</label>
+                <input 
+                  type="number" min="1" max="10" value={numQ} 
+                  onChange={e => setNumQ(parseInt(e.target.value))}
+                  className="w-full px-4 py-3 bg-slate-900/50 border border-white/5 rounded-xl text-sm text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Thème Spécifique</label>
+                <input 
+                  type="text" placeholder="ex: Paraboles, David..." value={topic}
+                  onChange={e => setTopic(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-900/50 border border-white/5 rounded-xl text-sm text-white placeholder-slate-600 focus:ring-2 focus:ring-orange-500/50 outline-none"
+                />
+              </div>
+            </div>
+
+            <button 
+              onClick={handleGenerate}
+              disabled={generating}
+              className="w-full py-4 bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-500 hover:to-orange-500 text-white font-black rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-orange-600/20 disabled:opacity-50"
+            >
+              {generating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Wand2 className="w-5 h-5" />}
+              {generating ? 'GÉNÉRATION EN COURS...' : 'LANCER LA GÉNÉRATION GPT-4o'}
+            </button>
+
+            {genError && <p className="mt-4 text-center text-red-400 text-xs font-bold font-mono">❌ {genError}</p>}
+
+            {generatedQuestions.length > 0 && (
+              <div className="mt-8 pt-8 border-t border-white/5 space-y-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="font-black text-white text-xs uppercase tracking-widest">Aperçu ({generatedQuestions.length})</h4>
+                  <div className="flex gap-2">
+                    <button onClick={handleSaveBulk} disabled={savingBulk} className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2">
+                      {savingBulk ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
+                      Approuver & Sauver Tout
+                    </button>
+                    <button onClick={() => setGeneratedQuestions([])} className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-400 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all">
+                      Annuler
+                    </button>
+                  </div>
+                </div>
+                
+                {saveMsg && <p className="text-green-400 text-xs font-bold text-center animate-bounce">{saveMsg}</p>}
+
+                <div className="grid gap-3 max-h-80 overflow-y-auto pr-2">
+                  {generatedQuestions.map((q, idx) => (
+                    <div key={idx} className="bg-slate-900/50 border border-white/5 rounded-xl p-4 flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <p className="text-white text-xs font-bold leading-relaxed">{q.text}</p>
+                        <div className="flex items-center gap-3 mt-2">
+                          <span className="text-[10px] font-black text-orange-400 uppercase tracking-widest">R: {String(q.answer)}</span>
+                          <span className="text-[10px] italic text-slate-500">{q.reference || 'Pas de réf.'}</span>
+                        </div>
+                      </div>
+                      <button onClick={() => handleSaveOneGen(q)} className="p-2 rounded-lg bg-white/5 hover:bg-green-500/20 text-slate-500 hover:text-green-400 transition-all">
+                        <Save className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Import Zone */}
       <div className="grid md:grid-cols-2 gap-6">
@@ -472,18 +654,40 @@ const ContentAdmin = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingMode, setEditingMode] = useState(null);
   const [notification, setNotification] = useState(null);
+  const [wordPool, setWordPool] = useState('');
+  const [isUpdatingPool, setIsUpdatingPool] = useState(false);
 
   const fetchModes = useCallback(async () => {
     setLoading(true);
     try {
       const response = await axios.get(`${BACKEND_URL}/api/game-modes`);
       setGameModes(response.data);
+      // Auto-set pool if mots_caches is found
+      const mc = response.data.find(m => (m.id === 'mots_caches' || m.mode_id === 'mots_caches'));
+      if (mc) setWordPool(mc.word_pool || '');
     } catch (err) {
       console.error('Fetch modes error:', err);
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const handleUpdatePool = async () => {
+    if (!wordPool.trim()) return;
+    setIsUpdatingPool(true);
+    try {
+      const token = localStorage.getItem('adminToken');
+      await axios.put(`${BACKEND_URL}/api/admin/modes/mots_caches`, { 
+        word_pool: wordPool 
+      }, { headers: { Authorization: `Bearer ${token}` }, withCredentials: true });
+      showNotification('Pool de mots mis à jour !');
+      fetchModes();
+    } catch (err) {
+      showNotification('Échec de la mise à jour', 'error');
+    } finally {
+      setIsUpdatingPool(false);
+    }
+  };
 
   useEffect(() => {
     fetchModes();
@@ -682,6 +886,55 @@ const ContentAdmin = () => {
                 )}
               </div>
             )}
+          </div>
+
+          {/* Word Pool Configuration Section */}
+          <div className="mt-12 bg-slate-900/50 border border-blue-500/20 p-8 rounded-[2rem] relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/5 blur-[80px] -mr-32 -mt-32" />
+            
+            <div className="flex flex-col md:flex-row items-start gap-8 relative z-10">
+              <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-4xl shadow-xl shadow-blue-500/20">
+                🔤
+              </div>
+              <div className="flex-1 w-full">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="text-2xl font-black text-white">Pool de Mots (Mots Cachés)</h3>
+                    <p className="text-slate-400 text-sm mt-1 max-w-xl">
+                      Configurez la base de données de mots pour les grilles générées dynamiquement. 
+                      Séparez les mots par des virgules (ex: JÉSUS, MARIE, MOÏSE).
+                    </p>
+                  </div>
+                  <div className="bg-blue-500/10 border border-blue-500/20 px-4 py-2 rounded-2xl text-center">
+                    <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Mots détectés</p>
+                    <p className="text-xl font-black text-white">{wordPool.split(',').filter(w => w.trim()).length}</p>
+                  </div>
+                </div>
+                
+                <div className="space-y-4">
+                  <textarea
+                    value={wordPool}
+                    onChange={(e) => setWordPool(e.target.value)}
+                    placeholder="Entrez vos mots ici, séparés par des virgules..."
+                    className="w-full h-80 bg-black/40 border border-white/5 rounded-2xl p-6 text-slate-300 font-mono text-sm focus:ring-2 focus:ring-blue-500/50 outline-none transition-all placeholder:text-slate-700 resize-none"
+                  />
+                  <div className="flex justify-end">
+                    <button 
+                      onClick={handleUpdatePool} 
+                      disabled={isUpdatingPool}
+                      className="group bg-blue-600 hover:bg-blue-500 text-white px-10 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-600/20 flex items-center gap-3 transition-all disabled:opacity-50"
+                    >
+                      {isUpdatingPool ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Save className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                      )}
+                      {isUpdatingPool ? 'Enregistrement...' : 'Enregistrer le Pool'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

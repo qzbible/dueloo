@@ -12,7 +12,7 @@ export const GAME_CLASSIFICATION = {
   'chrono_versets':  GAME_TYPES.DUAL_VIEW,
 
   // Jeux de Mots
-  'mots_caches':     GAME_TYPES.HYBRID,
+  'mots_caches':     GAME_TYPES.SINGLE_VIEW,
   'anagrammes':      GAME_TYPES.DUAL_VIEW,
 
   // Stratégie et Plateau — core selection

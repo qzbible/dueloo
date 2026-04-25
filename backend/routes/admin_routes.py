@@ -886,3 +886,49 @@ async def import_questions_from_excel(
         "errors": errors[:10],  # Return at most 10 errors to avoid verbose response
         "message": f"{inserted} questions importées, {skipped} ignorées.",
     }
+
+# =====================================================================
+# MODULE 5: GAME MODES MANAGEMENT
+# =====================================================================
+
+@router.patch("/game-modes/{mode_id}")
+async def update_game_mode(
+    mode_id: str,
+    request: Request,
+    authorization: Optional[str] = Header(None)
+):
+    await get_admin_user(request, authorization)
+    updates = await request.json()
+    
+    result = await db.game_modes.update_one(
+        {"mode_id": mode_id},
+        {"$set": updates}
+    )
+    
+    if result.matched_count == 0:
+        # Try finding by 'id' if 'mode_id' fails
+        result = await db.game_modes.update_one(
+            {"id": mode_id},
+            {"$set": updates}
+        )
+        
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Mode de jeu non trouvé")
+        
+    return {"message": "Mode mis à jour", "mode_id": mode_id}
+
+@router.put("/modes/mots_caches")
+async def update_mots_caches_pool(
+    request: Request,
+    authorization: Optional[str] = Header(None)
+):
+    await get_admin_user(request, authorization)
+    body = await request.json()
+    word_pool = body.get("word_pool", "")
+    
+    await db.game_modes.update_one(
+        {"mode_id": "mots_caches"},
+        {"$set": {"word_pool": word_pool}}
+    )
+    
+    return {"message": "Pool de mots mis à jour"}

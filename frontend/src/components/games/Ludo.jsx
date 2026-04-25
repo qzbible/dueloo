@@ -181,8 +181,7 @@ const INIT = {
   turn: 'R', dice: null, rolled: false, winner: null,
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-const Ludo = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator = false }) => {
+const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove, bothReady, isSpectator = false }) => {
 
   const [gs, setGs]               = useState(() => {
     const saved = duelMode?.recovered?.pieces ? duelMode.recovered
@@ -208,23 +207,30 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator
                         duelMode?.gameData?.max_players || 
                         duelMode?.config?.specifics?.max_players || 2;
 
-  const ROLE_COLOR    = maxP === 2 ? { player1:'R', player2:'B' } : { player1:'R', player2:'G', player3:'Y', player4:'B' };
-  const myColor       = isMultiplayer ? (ROLE_COLOR[duelMode?.role] || 'R') : 'R';
-  const isHumanTurn   = turn === myColor && (!isMultiplayer || bothReady);
-  const isAITurn      = isAIMode && turn !== myColor && !winner;
+  // Color mapping: 2p=R/B, 3p=R/B/G(vert), 4p=R/G/Y/B
+  // Unified Color mapping following board rotation: R(TL), G(TR), Y(BR), B(BL)
+  // Mapping roles to colors to support 2, 3, or 4 players
+  const ROLE_COLOR    = maxP === 2 ? { player1:'R', player2:'B' } :
+                        maxP === 3 ? { player1:'R', player2:'B', player3:'G' } : 
+                                     { player1:'R', player2:'G', player3:'Y', player4:'B' };
+  const myColor       = isMultiplayer ? (ROLE_COLOR[duelMode?.role] || null) : 'R';
+  const isHumanTurn   = !isSpectator && turn === myColor && (!isMultiplayer || bothReady);
+  const isAITurn      = isAIMode && !isSpectator && turn !== myColor && !winner;
 
   const validIds      = rolled ? getValid(turn, pieces, dice) : [];
 
   // ── NEXT PLAYER ───────────────────────────────────────────────────────────────
-  const getNextPlayer = useCallback((current) => {
-    const seq = { R:'G', G:'Y', Y:'B', B:'R' };
-    if (maxP === 2) return current === 'R' ? 'B' : 'R';
-    if (maxP === 3) {
-      const candy = seq[current];
-      return candy === 'B' ? 'R' : candy;
-    }
-    return seq[current];
-  }, [maxP]);
+  const getNextPlayer = useCallback((curr) => {
+    // Clockwise: Red (TL) -> Green (TR) -> Yellow (BR) -> Blue (BL)
+    const fullList = ['R', 'G', 'Y', 'B'];
+    const activeColors = Object.values(ROLE_COLOR);
+    const activeList = fullList.filter(c => activeColors.includes(c)); // Subsequence of R-G-Y-B
+    
+    const idx = activeList.indexOf(curr);
+    if (idx === -1) return activeList[0];
+    return activeList[(idx + 1) % activeList.length];
+  }, [ROLE_COLOR]);
+
 
   // ── APPLY MOVE (pure calculation + setState) ───────────────────────────────────
   const applyMove = useCallback((state, pieceId, diceVal) => {
@@ -253,7 +259,7 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator
               didCapture = true;
               setCaptureKey(cellKey);
               setTimeout(() => setCaptureKey(null), 800);
-              return JAIL_VALS[t]; // Now jailed in capturer's base
+              return JAIL_VALS[opp]; // Now jailed in their own base
             }
             return pp;
           });
@@ -276,6 +282,10 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator
   const doMove = useCallback(async (pieceId) => {
     if (animPiece) return;
     const { turn: t, pieces: p, dice: d } = gsRef.current;
+    
+    // Broadcast animation start so opponent sees the exact physics!
+    if (isMultiplayer && onMove) onMove({ type: 'ludo_anim', color: t, pieceId, diceVal: d, id: Math.random().toString() });
+    
     const startPos = p[t][pieceId];
     
     // Jail -> Base jump (no step animation)
@@ -287,27 +297,51 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator
       const steps = startPos === -1 ? 1 : d;
       for (let i = 1; i <= steps; i++) {
         setAnimPiece({ color: t, id: pieceId, pos: startPos === -1 ? 0 : startPos + i });
-        await sleep(100);
+        await sleep(60);
       }
       setAnimPiece(null);
     }
 
     const next = applyMove(gsRef.current, pieceId, d);
     setGs(next);
-    if (isMultiplayer && onMove) onMove({ type: 'ludo_state', ...next });
+    if (isMultiplayer && onMove) onMove({ type: 'ludo_state', id: Math.random().toString(), ...next });
     if (next.winner && onSubmit) setTimeout(() => onSubmit({ won: next.winner === myColor }), 2000);
   }, [animPiece, applyMove, isMultiplayer, myColor, onMove, onSubmit]);
+
+  // ── REMOTE PIECE MOVE (for visual sync only) ──────────────────────────────────
+  const doMoveRemote = useCallback(async (color, pieceId, d) => {
+    if (animPiece) return;
+    const startPos = gsRef.current.pieces[color][pieceId];
+    
+    if (startPos <= -10) {
+      setAnimPiece({ color, id: pieceId, pos: -1 });
+      await sleep(150);
+      setAnimPiece(null);
+    } else {
+      const steps = startPos === -1 ? 1 : d;
+      for (let i = 1; i <= steps; i++) {
+        setAnimPiece({ color, id: pieceId, pos: startPos === -1 ? 0 : startPos + i });
+        await sleep(60);
+      }
+      setAnimPiece(null);
+    }
+  }, [animPiece]);
 
   // ── HUMAN DICE ROLL ───────────────────────────────────────────────────────────
   const doRoll = () => {
     if (isSpectator || !isHumanTurn || rolled || rolling || winner) return;
     setRolling(true);
     setShakeBoard(true);
+    
+    if (isMultiplayer && onMove) onMove({ type: 'ludo_rolling', id: Math.random().toString() });
+
     setTimeout(() => setShakeBoard(false), 300);
     setTimeout(() => {
       const val = Math.floor(Math.random() * 6) + 1;
       setGs(prev => ({ ...prev, dice: val, rolled: true }));
       setRolling(false);
+      
+      if (isMultiplayer && onMove) onMove({ type: 'ludo_dice', diceVal: val, id: Math.random().toString() });
     }, 500);
   };
 
@@ -317,13 +351,14 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator
       const t = setTimeout(() => {
         setGs(prev => {
           const next = { ...prev, dice: null, rolled: false, turn: getNextPlayer(prev.turn) };
-          if (isMultiplayer && onMove) onMove({ type: 'ludo_state', ...next });
+          if (isMultiplayer && onMove) onMove({ type: 'ludo_state', id: Math.random().toString(), ...next });
           return next;
         });
       }, 1000);
       return () => clearTimeout(t);
     }
   }, [rolled, rolling, winner, isAITurn, validIds.length, getNextPlayer, isMultiplayer, onMove]);
+
 
   // ── AI ENGINE ─────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -341,14 +376,20 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator
         setTimeout(() => setShakeBoard(false), 300);
         await sleep(600);
         const val = Math.floor(Math.random() * 6) + 1;
+        
+        // Force the AI's roll into the global state so the human spectator sees it
+        setGs(prev => ({ ...prev, dice: val, rolled: true }));
         setRolling(false);
+        
+        // Wait long enough for the human player to read the AI's dice roll!
+        await sleep(1500);
 
-        // 2. Read latest state
+        // 2. Read latest state and valid moves
         const current = gsRef.current;
         const valid   = getValid(current.turn, current.pieces, val);
 
+        // If the AI has no valid moves (e.g. rolled a 3 while stuck in base), pass turn clearly
         if (valid.length === 0) {
-          await sleep(600);
           const next = { ...current, dice: null, rolled: false, turn: getNextPlayer(current.turn) };
           setGs(next);
           return;
@@ -356,8 +397,7 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator
 
         // 3. Choice of move
         const chosenId = valid[Math.floor(Math.random() * valid.length)];
-        setGs(prev => ({ ...prev, dice: val, rolled: true }));
-        await sleep(800);
+        await sleep(400);
 
         // 4. Animate & apply
         await doMove(chosenId); 
@@ -372,11 +412,54 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator
   }, [turn, rolled, isAITurn, winner, animPiece, rolling, doMove, getNextPlayer]);
 
   // ── REMOTE SYNC ───────────────────────────────────────────────────────────────
+  const processedIndexRef = useRef(0);
+  const queueRunningRef   = useRef(false);
+
+  const queueRef = useRef([]);
+  useEffect(() => { queueRef.current = opponentMoveQueue; }, [opponentMoveQueue]);
+
   useEffect(() => {
-    if (isMultiplayer && opponentMove?.type === 'ludo_state' && (!isHumanTurn || isSpectator)) {
-      setGs(opponentMove);
-    }
-  }, [opponentMove, isMultiplayer, isHumanTurn, isSpectator]);
+    if (!isMultiplayer || !opponentMoveQueue || opponentMoveQueue.length === 0) return;
+    if (queueRunningRef.current) return; // Prevent concurrent queue parsing instances
+
+    const processQueue = async () => {
+      queueRunningRef.current = true;
+      try {
+        while (processedIndexRef.current < queueRef.current.length) {
+          const opMove = queueRef.current[processedIndexRef.current];
+
+          if (opMove.type === 'ludo_rolling') {
+            setRolling(true);
+            setShakeBoard(true);
+            await sleep(300);
+            setShakeBoard(false);
+          } 
+          else if (opMove.type === 'ludo_dice') {
+            setGs(prev => {
+              const fresh = { ...prev, dice: opMove.diceVal, rolled: true };
+              gsRef.current = fresh; // Sync math for impending animations within same queue
+              return fresh;
+            });
+            setRolling(false);
+          }
+          else if (opMove.type === 'ludo_anim') {
+            await doMoveRemote(opMove.color, opMove.pieceId, opMove.diceVal);
+          }
+          else if (opMove.type === 'ludo_state') {
+            setGs(opMove);
+            gsRef.current = opMove; // Sync math unconditionally
+          }
+          
+          processedIndexRef.current++;
+          await sleep(20); // Small DOM flush buffer
+        }
+      } finally {
+        queueRunningRef.current = false;
+      }
+    };
+    
+    processQueue();
+  }, [opponentMoveQueue, isMultiplayer, doMoveRemote]);
 
   // ── PIECE-POSITION LOOKUP MAP ─────────────────────────────────────────────────
   const pieceAt = {};
@@ -413,6 +496,18 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator
                     : '🎲 Lance le dé !'
                   : `⏳ Tour de ${COLOR_META[turn].label}…`}
           </span>
+          {/* My color badge for multiplayer */}
+          {isMultiplayer && myColor && (
+            <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border mt-0.5`}
+              style={{ 
+                color: myColor === 'R' ? '#f87171' : myColor === 'B' ? '#60a5fa' : myColor === 'G' ? '#4ade80' : '#facc15',
+                borderColor: myColor === 'R' ? '#f87171' : myColor === 'B' ? '#60a5fa' : myColor === 'G' ? '#4ade80' : '#facc15',
+                background: myColor === 'R' ? 'rgba(239,68,68,0.1)' : myColor === 'B' ? 'rgba(59,130,246,0.1)' : myColor === 'G' ? 'rgba(74,222,128,0.1)' : 'rgba(250,204,21,0.1)'
+              }}
+            >
+              Vous : {myColor === 'R' ? 'Rouge' : myColor === 'B' ? 'Bleu' : myColor === 'G' ? 'Vert' : 'Jaune'}
+            </span>
+          )}
         </div>
 
         {/* Dice button */}
@@ -561,7 +656,8 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator
 
       {/* ── PLAYER CARDS ──────────────────────────────────────────────────── */}
       <div className="w-full max-w-lg mt-6 grid grid-cols-4 gap-2">
-        {(['R','G','Y','B']).map((color, idx) => {
+        {(Object.keys(ROLE_COLOR)).sort().map((role, idx) => {
+          const color  = ROLE_COLOR[role];
           const meta   = COLOR_META[color];
           const active = turn === color;
           const done   = pieces[color].filter(p => p === 57).length;
@@ -572,7 +668,7 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, onMove, bothReady, isSpectator
                 ? `${BG_CLASS[color]} border-white/30 scale-105 shadow-xl`
                 : 'bg-white/5 border-white/10 opacity-50 grayscale'}`}>
               <div className="text-[8px] font-black text-white/80 uppercase tracking-widest mb-2">
-                {isAI ? '🤖' : `J${idx+1}`} · {meta.label}
+                {isAI ? '🤖' : role} · {meta.label}
               </div>
               <div className="flex gap-1 items-center">
                 {pieces[color].map((p, i) => (

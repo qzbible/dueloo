@@ -11,6 +11,7 @@ import { getGameType, GAME_TYPES } from '@/lib/gameConfig';
 
 // Import specific game for test
 import Chess from '@/components/games/Chess';
+import MotsCaches from '@/components/games/MotsCaches';
 import VoiceChat from '@/components/VoiceChat';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -112,7 +113,8 @@ const SpectatorView = ({ matchId, initialData, isActive = true }) => {
     });
   };
 
-  const handleLike = (role = null) => {
+  const handleLike = (e, role = null) => {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
     socketRef.current.emit('game_like', { match_id: matchId, player_role: role });
   };
 
@@ -127,7 +129,8 @@ const SpectatorView = ({ matchId, initialData, isActive = true }) => {
     setCommentText('');
   };
 
-  const handleReaction = (type) => {
+  const handleReaction = (e, type) => {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
     socketRef.current.emit('game_reaction', { match_id: matchId, reaction_type: type });
   };
 
@@ -140,12 +143,13 @@ const SpectatorView = ({ matchId, initialData, isActive = true }) => {
       opponentMove: { ...opponentMove, _ts: Date.now() }, 
       gameData: matchData.game_data,
       bothReady: true,
-      duelMode: { role: role, matchId: matchId },
+      duelMode: { ...matchData, role: role, matchId: matchId },
       playerNames: { player1: matchData.player1_name, player2: matchData.player2_name }
     };
 
     const gameComponents = {
       'echecs': Chess,
+      'mots_caches': MotsCaches,
       'damier': React.lazy(() => import('@/components/games/Checkers')),
       'ludo': React.lazy(() => import('@/components/games/Ludo')),
       // other games will just use their default component config
@@ -291,8 +295,9 @@ const SpectatorView = ({ matchId, initialData, isActive = true }) => {
                 {['🔥', '👏', '😱', '😂'].map(emoji => (
                   <Button 
                     key={emoji} 
+                    type="button"
                     variant="ghost" 
-                    onClick={() => handleReaction(emoji)} 
+                    onClick={(e) => handleReaction(e, emoji)} 
                     className="text-base sm:text-lg hover:bg-white/10 rounded-xl px-2 sm:px-3 transition-all hover:scale-110 active:scale-95 h-9 sm:h-11"
                   >
                     {emoji}
@@ -310,7 +315,7 @@ const SpectatorView = ({ matchId, initialData, isActive = true }) => {
                  />
                  <Button 
                    onClick={handleSendComment} 
-                   size="icon" 
+                   type="button"                   size="icon" 
                    disabled={!commentText.trim()}
                    className="bg-blue-600 hover:bg-blue-500 rounded-xl transition-all shadow-lg shadow-blue-600/20 h-8 w-8 sm:h-10 sm:w-10 flex-shrink-0"
                  >
@@ -319,7 +324,8 @@ const SpectatorView = ({ matchId, initialData, isActive = true }) => {
               </div>
               <div className="w-px h-6 bg-white/10 mx-0.5 lg:hidden" />
               <Button 
-                onClick={() => handleLike()} 
+                onClick={(e) => handleLike(e)} 
+                type="button"
                 className="gap-1 sm:gap-2 bg-pink-600/10 hover:bg-pink-600/20 text-pink-500 border border-pink-500/20 rounded-xl px-2 sm:px-4 lg:px-6 h-8 sm:h-10"
               >
                 <Heart className={`w-3 h-3 sm:w-4 h-4 ${likes.global > 0 ? 'fill-current' : ''}`} />

@@ -24,7 +24,7 @@ import Leaderboard from '@/pages/Leaderboard';
 import Achievements from '@/pages/Achievements';
 import Tournaments from '@/pages/Tournaments';
 import SpectatorFeed from '@/pages/Spectator';
-import Admin from '@/pages/Admin';
+// import Admin from '@/pages/Admin'; // Removed as requested
 import { useAuthStore } from '@/stores/authStore';
 
 const ProtectedRoute = ({ children }) => {
@@ -103,7 +103,7 @@ function AppRouter() {
       <Route path="/spectate" element={<SpectatorFeed />} />
       <Route path="/premium" element={<Premium />} />
       <Route path="/premium-success" element={<PremiumSuccess />} />
-      <Route path="/admin" element={<Admin />} />
+      <Route path="/admin" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

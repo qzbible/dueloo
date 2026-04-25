@@ -81,6 +81,9 @@ const Dashboard = () => {
   const handleLogout = async () => {
     try {
       await axios.post(`${BACKEND_URL}/api/auth/logout`, {}, { withCredentials: true });
+      // Clear all browser stored data
+      localStorage.clear();
+      sessionStorage.clear();
       clearUser();
       navigate('/');
     } catch (error) { console.error(error); }
@@ -107,51 +110,43 @@ const Dashboard = () => {
 
       {/* Sticky Header */}
       <header className="sticky top-0 z-50 glass border-b border-white/5 backdrop-blur-xl">
-        <div className="container mx-auto px-6 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-3 group cursor-pointer" onClick={() => navigate('/profile')}>
+        <div className="container mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
+          <div className="flex items-center gap-2 sm:gap-6">
+            <div className="flex items-center gap-2 sm:gap-3 group cursor-pointer" onClick={() => navigate('/profile')}>
               <div className="relative">
-                <img src={user?.picture || 'https://via.placeholder.com/40'} alt={user?.name} className="w-10 h-10 rounded-xl border-2 border-white/10 object-cover shadow-lg group-hover:border-blue-500 transition-all" />
-                {user?.is_premium && <Crown className="absolute -top-1.5 -right-1.5 w-4 h-4 text-yellow-400 drop-shadow-md" />}
+                <img src={user?.picture || 'https://via.placeholder.com/40'} alt={user?.name} className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl border-2 border-white/10 object-cover shadow-lg group-hover:border-blue-500 transition-all" />
+                {user?.is_premium && <Crown className="absolute -top-1.5 -right-1.5 w-3 h-3 sm:w-4 sm:h-4 text-yellow-400 drop-shadow-md" />}
               </div>
-              <div className="hidden sm:block">
+              <div className="hidden md:block">
                 <p className="text-sm font-black text-white leading-none">{user?.name}</p>
                 <p className="text-[10px] font-bold text-blue-400/60 uppercase tracking-widest mt-1">Explorateur en herbe</p>
               </div>
             </div>
 
-            <div className="h-8 w-px bg-white/5" />
+            <div className="hidden sm:block h-8 w-px bg-white/5" />
 
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-yellow-500/10 border border-yellow-500/20">
-              <Coins className="w-4 h-4 text-yellow-500" />
-              <span className="text-sm font-black text-white tabular-nums">{user?.coins || 0}</span>
+            <div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-yellow-500/10 border border-yellow-500/20">
+              <Coins className="w-3.5 h-3.5 sm:w-4 h-4 text-yellow-500" />
+              <span className="text-xs sm:text-sm font-black text-white tabular-nums">{user?.coins || 0}</span>
             </div>
 
             <Button 
               onClick={() => navigate('/spectate')} 
-              className="bg-emerald-500 text-white hover:bg-emerald-600 font-black text-xs px-4 h-9 rounded-xl shadow-lg shadow-emerald-500/20"
+              className="bg-emerald-500 text-white hover:bg-emerald-600 font-black text-[10px] sm:text-xs px-2 sm:px-4 h-8 sm:h-9 rounded-xl shadow-lg shadow-emerald-500/20"
             >
-              <Eye className="w-3.5 h-3.5 mr-2" /> {t('landing.watch_live') || 'Regarder le Live'}
+              <Eye className="w-3.5 h-3.5 sm:mr-2" />
+              <span className="hidden sm:inline">{t('landing.watch_live') || 'Regarder le Live'}</span>
             </Button>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <LanguageSwitcher />
-            {user?.is_admin && (
-              <button 
-                onClick={() => navigate('/admin')} 
-                className="p-2 rounded-xl bg-white/5 text-yellow-400 hover:bg-white/10 border border-white/5 transition-all"
-                title="Admin Panel"
-              >
-                <Shield className="w-5 h-5" />
-              </button>
-            )}
             <button 
               onClick={handleLogout} 
               className="p-2 rounded-xl bg-white/5 text-red-400 hover:bg-white/10 border border-white/5 transition-all"
               title={t('dashboard.logout')}
             >
-              <LogOut className="w-5 h-5" />
+              <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           </div>
         </div>
