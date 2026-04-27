@@ -15,6 +15,16 @@ import MotsCaches from '@/components/games/MotsCaches';
 import VoiceChat from '@/components/VoiceChat';
 import { useAuthStore } from '@/stores/authStore';
 
+const CheckersLazy = React.lazy(() => import('@/components/games/Checkers'));
+const LudoLazy = React.lazy(() => import('@/components/games/Ludo'));
+
+const GAME_COMPONENTS_MAP = {
+  'echecs': Chess,
+  'mots_caches': MotsCaches,
+  'damier': CheckersLazy,
+  'ludo': LudoLazy,
+};
+
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 const SpectatorView = ({ matchId, initialData, isActive = true }) => {
@@ -29,6 +39,7 @@ const SpectatorView = ({ matchId, initialData, isActive = true }) => {
   const [reactions, setReactions] = useState([]);
   const [commentText, setCommentText] = useState('');
   const [opponentMove, setOpponentMove] = useState(null);
+  const [opponentMoveQueue, setOpponentMoveQueue] = useState([]);
   const [loading, setLoading] = useState(!initialData);
   const [spectatorCount, setSpectatorCount] = useState(0);
   const commentsEndRef = useRef(null);
@@ -90,6 +101,7 @@ const SpectatorView = ({ matchId, initialData, isActive = true }) => {
 
     socketRef.current.on('opponent_move', (move) => {
       setOpponentMove(move);
+      setOpponentMoveQueue(prev => [...prev, move]);
     });
 
     socketRef.current.on('like_update', (data) => {
@@ -141,21 +153,33 @@ const SpectatorView = ({ matchId, initialData, isActive = true }) => {
       role: role,
       matchId: matchId,
       opponentMove: { ...opponentMove, _ts: Date.now() }, 
+      opponentMoveQueue: opponentMoveQueue,
       gameData: matchData.game_data,
       bothReady: true,
-      duelMode: { ...matchData, role: role, matchId: matchId },
-      playerNames: { player1: matchData.player1_name, player2: matchData.player2_name }
+      duelMode: { 
+        ...matchData, 
+        role: role, 
+        matchId: matchId,
+        gameData: matchData.game_data || matchData
+      },
+      playerNames: { player1: matchData.player1_name, player2: matchData.player2_name },
+      onMove: (move) => {
+        if (move.type === 'game_like') {
+          handleLike(null, move.player_role || 'global');
+        } else if (move.type === 'game_reaction') {
+          handleReaction(null, move.reaction_type);
+        } else if (move.type === 'game_comment') {
+          socketRef.current.emit('game_comment', {
+            match_id: matchId,
+            user_id: user?.user_id || 'guest',
+            user_name: move.user_name || 'Spectateur',
+            text: move.text
+          });
+        }
+      }
     };
 
-    const gameComponents = {
-      'echecs': Chess,
-      'mots_caches': MotsCaches,
-      'damier': React.lazy(() => import('@/components/games/Checkers')),
-      'ludo': React.lazy(() => import('@/components/games/Ludo')),
-      // other games will just use their default component config
-    };
-
-    const GameComponent = gameComponents[matchData.mode_id?.toLowerCase()];
+    const GameComponent = GAME_COMPONENTS_MAP[matchData.mode_id?.toLowerCase()];
     
     if (GameComponent) {
       return (

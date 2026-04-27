@@ -39,6 +39,7 @@ const VoiceChat = ({ socket, matchId, role, userId, duelMode }) => {
   const remoteStreamsRef = useRef(new Map()); // map of sid -> stream
   const remoteAudioElementsRef = useRef(new Map()); // map of sid -> audio element
   const iceQueuesRef = useRef(new Map()); // map of sid -> candidate[]
+  const sigQueueRef = useRef(new Map()); // map of sid -> Promise (to prevent signaling race conditions)
   
   const audioContextRef = useRef(null);
   const remoteAnalyzersRef = useRef(new Map()); 
@@ -131,18 +132,27 @@ const VoiceChat = ({ socket, matchId, role, userId, duelMode }) => {
       return pc;
     };
 
-    const handleOffer = async (data) => {
+    const queueSig = (sid, task) => {
+      let q = sigQueueRef.current.get(sid) || Promise.resolve();
+      q = q.then(task).catch(err => console.error(`[WebRTC] Signaling error for ${sid}:`, err));
+      sigQueueRef.current.set(sid, q);
+    };
+
+    const handleOffer = (data) => {
       if (cancelled) return;
       const sid = data.from_sid || 'player';
       const pRole = data.role || 'unknown';
-      const pc = getOrCreatePC(sid, false);
       
-      setRemoteParticipants(prev => {
-        if (prev.find(p => p.sid === sid)) {
-           return prev.map(p => p.sid === sid ? { ...p, role: pRole } : p);
-        }
-        return [...prev, { sid, role: pRole, activity: 0 }];
-      });
+      queueSig(sid, async () => {
+        const pc = getOrCreatePC(sid, false);
+        
+        setRemoteParticipants(prev => {
+          if (prev.find(p => p.sid === sid)) {
+             return prev.map(p => p.sid === sid ? { ...p, role: pRole } : p);
+          }
+          return [...prev, { sid, role: pRole, activity: 0 }];
+        });
+
       
       try {
         const desc = new RTCSessionDescription({
@@ -165,18 +175,22 @@ const VoiceChat = ({ socket, matchId, role, userId, duelMode }) => {
           await pc.addIceCandidate(new RTCIceCandidate(queue.shift()));
         }
       } catch (err) { console.error("Offer error:", err); }
+      });
     };
 
-    const handleAnswer = async (data) => {
+    const handleAnswer = (data) => {
       if (cancelled) return;
       const sid = data.from_sid || 'player';
       const pRole = data.role || 'unknown';
-      const pc = peerConnectionsRef.current.get(sid);
-      if (!pc) return;
       
-      setRemoteParticipants(prev => prev.map(p => 
-        p.sid === sid ? { ...p, role: pRole } : p
-      ));
+      queueSig(sid, async () => {
+        const pc = peerConnectionsRef.current.get(sid);
+        if (!pc) return;
+        
+        setRemoteParticipants(prev => prev.map(p => 
+          p.sid === sid ? { ...p, role: pRole } : p
+        ));
+
       try {
         const desc = new RTCSessionDescription({
           type: 'answer',
@@ -188,6 +202,7 @@ const VoiceChat = ({ socket, matchId, role, userId, duelMode }) => {
           await pc.addIceCandidate(new RTCIceCandidate(queue.shift()));
         }
       } catch (err) { console.error("Answer error:", err); }
+      });
     };
 
     const handleIce = async (data) => {
@@ -219,18 +234,20 @@ const VoiceChat = ({ socket, matchId, role, userId, duelMode }) => {
         const targetSid = data[`player${i}_sid`];
         if (targetSid && targetSid !== socket.id) {
           console.log(`[FullMesh] Initiating call: ${role} -> player${i} (${targetSid})`);
-          const pc = getOrCreatePC(targetSid, true);
-          try {
-            let offer = await pc.createOffer();
-            offer = { type: 'offer', sdp: optimizeSDP(offer.sdp) };
-            await pc.setLocalDescription(offer);
-            socket.emit('webrtc_offer', { 
-              match_id: matchId, 
-              offer, 
-              target_sid: targetSid,
-              role: role 
-            });
-          } catch (err) { console.error(`[FullMesh] Offer error to player${i}:`, err); }
+          queueSig(targetSid, async () => {
+            const pc = getOrCreatePC(targetSid, true);
+            try {
+              let offer = await pc.createOffer();
+              offer = { type: 'offer', sdp: optimizeSDP(offer.sdp) };
+              await pc.setLocalDescription(offer);
+              socket.emit('webrtc_offer', { 
+                match_id: matchId, 
+                offer, 
+                target_sid: targetSid,
+                role: role 
+              });
+            } catch (err) { console.error(`[FullMesh] Offer error to player${i}:`, err); }
+          });
         }
       }
     };
@@ -239,18 +256,21 @@ const VoiceChat = ({ socket, matchId, role, userId, duelMode }) => {
       if (cancelled || isSpectator) return;
       const specSid = data.spectator_sid;
       console.log("Initiating outgoing voice to spectator:", specSid);
-      const pc = getOrCreatePC(specSid, true);
-      try {
-        let offer = await pc.createOffer();
-        offer = { type: 'offer', sdp: optimizeSDP(offer.sdp) };
-        await pc.setLocalDescription(offer);
-        socket.emit('webrtc_offer', { 
-          match_id: matchId, 
-          offer, 
-          target_sid: specSid,
-          role: role // 'player1', etc.
-        });
-      } catch (err) { console.error("Spectator offer error:", err); }
+      
+      queueSig(specSid, async () => {
+        const pc = getOrCreatePC(specSid, true);
+        try {
+          let offer = await pc.createOffer();
+          offer = { type: 'offer', sdp: optimizeSDP(offer.sdp) };
+          await pc.setLocalDescription(offer);
+          socket.emit('webrtc_offer', { 
+            match_id: matchId, 
+            offer, 
+            target_sid: specSid,
+            role: role // 'player1', etc.
+          });
+        } catch (err) { console.error("Spectator offer error:", err); }
+      });
     };
 
     const handleOpponentDisconnected = (data) => {

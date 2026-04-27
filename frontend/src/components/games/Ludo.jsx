@@ -98,15 +98,16 @@ const checkCapture = (pieces, color, targetPos) => {
   const [r, c] = MAIN_PATH[absPos];
   if (SAFE.has(`${r},${c}`)) return false;
   
-  return Object.entries(pieces).some(([oppColor, oppPieces]) => {
+  return Object.entries(pieces || {}).some(([oppColor, oppPieces]) => {
     if (oppColor === color) return false;
-    return oppPieces.some(p => p >= 0 && p < 52 && (SPAWN_IDX[oppColor] + p) % 52 === absPos);
+    const oppList = oppPieces || [];
+    return oppList.some(p => p >= 0 && p < 52 && (SPAWN_IDX[oppColor] + p) % 52 === absPos);
   });
 };
 
 // ─── VALID MOVES ──────────────────────────────────────────────────────────────
 const getValid = (color, pieces, dice, restrictedPieceId = null) => {
-  const piecesList = pieces[color] ?? [];
+  const piecesList = pieces?.[color] ?? [];
   const normalValid = piecesList.reduce((acc, pos, id) => {
     if (pos === 57) return acc;
     if (id === restrictedPieceId) return acc;
@@ -221,7 +222,9 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove = ()
     const saved = duelMode?.recovered?.pieces ? duelMode.recovered
                 : duelMode?.gameData?.pieces  ? duelMode.gameData : null;
     if (saved && saved.restrictedPieceId === undefined) saved.restrictedPieceId = null;
-    return saved ?? INIT;
+    console.log('[Ludo] Initial state:', saved ? 'Sync' : 'INIT', 'Role:', duelMode?.role);
+    
+    return saved || clone(INIT);
   });
   const gsRef                      = useRef(gs);
   const [animPiece, setAnimPiece]  = useState(null);
@@ -241,15 +244,32 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove = ()
 
   // Initial Sync from Socket/recovered data
   useEffect(() => {
-    const data = duelMode?.gameData?.pieces ? duelMode.gameData : duelMode?.recovered;
-    if (data?.pieces) {
-      setGs(data);
-      gsRef.current = data;
+    if (duelMode?.gameData || duelMode?.recovered) {
+      const data = duelMode?.gameData?.pieces ? duelMode.gameData 
+                 : (duelMode?.recovered?.pieces ? duelMode.recovered : clone(INIT));
+      
+      // Sync only if pieces dictate a change
+      if (data.pieces !== INIT.pieces) {
+        console.log('[Ludo] Syncing UI state with:', data.turn, data.dice);
+        setGs({ ...data });
+        gsRef.current = { ...data };
+      }
     }
     if (duelMode?.gameData?.comments) {
       setComments(duelMode.gameData.comments);
     }
   }, [duelMode?.gameData, duelMode?.recovered]);
+
+  const [forceRender, setForceRender] = useState(false);
+  useEffect(() => {
+    if (isSpectator) {
+      const timer = setTimeout(() => {
+        console.warn("[Ludo] Force rendering after 4 seconds timeout!");
+        setForceRender(true);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [isSpectator]);
 
   const { pieces, turn, dice, rolled, winner, restrictedPieceId } = gs;
 
@@ -486,7 +506,12 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove = ()
   const queueRunningRef   = useRef(false);
 
   const queueRef = useRef([]);
-  useEffect(() => { queueRef.current = opponentMoveQueue; }, [opponentMoveQueue]);
+  useEffect(() => { 
+    if (opponentMoveQueue && opponentMoveQueue.length < processedIndexRef.current) {
+      processedIndexRef.current = 0;
+    }
+    queueRef.current = opponentMoveQueue || []; 
+  }, [opponentMoveQueue]);
 
   useEffect(() => {
     if (!isMultiplayer || !opponentMoveQueue || opponentMoveQueue.length === 0) return;
@@ -546,7 +571,7 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove = ()
 
   // ── PIECE-POSITION LOOKUP MAP ─────────────────────────────────────────────────
   const pieceAt = {};
-  Object.entries(pieces).forEach(([color, list]) => {
+  Object.entries(pieces || {}).forEach(([color, list]) => {
     list.forEach((pos, id) => {
       const isMovingThis = animPiece?.color === color && animPiece?.id === id;
       const activePos    = isMovingThis ? animPiece.pos : pos;
@@ -557,6 +582,16 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove = ()
   });
 
   // ── RENDER ───────────────────────────────────────────────────────────────────
+  if (isSpectator && (!duelMode?.gameData && !duelMode?.recovered) && !forceRender) {
+    return (
+      <div className="flex flex-col items-center justify-center p-20 text-white gap-4">
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent"></div>
+        <p className="text-xl font-bold">Synchronisation du match...</p>
+        <p className="text-sm opacity-50">En attente du socket...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col items-center select-none py-4 px-2 w-full">
       {/* ── LIVE INDICATOR ────────────────────────────────────────────────── */}
@@ -768,7 +803,8 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove = ()
           const color  = ROLE_COLOR[role];
           const meta   = COLOR_META[color];
           const active = turn === color;
-          const done   = pieces[color].filter(p => p === 57).length;
+          const pList  = pieces?.[color] || [];
+          const done   = pList.filter(p => p === 57).length;
           const isAI   = isAIMode && color !== myColor;
           return (
             <div key={color} className={`rounded-2xl p-3 border transition-all duration-400
@@ -779,7 +815,7 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove = ()
                 {isAI ? '🤖' : role} · {meta.label}
               </div>
               <div className="flex gap-1 items-center">
-                {pieces[color].map((p, i) => (
+                {(pieces?.[color] || []).map((p, i) => (
                   <div key={i} title={p === 57 ? 'Arrivé !' : p === -1 ? 'Base' : `case ${p}`}
                     className={`flex-1 h-1.5 rounded-full transition-all
                       ${p === 57 ? 'bg-green-400 shadow-[0_0_6px_#4ade80]'
@@ -899,81 +935,7 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove = ()
         )}
       </AnimatePresence>
 
-      {/* ── SPECTATOR ACTIONS ────────────────────────────────────────────────── */}
-      {isSpectator && (
-         <div className="fixed bottom-24 right-6 flex flex-col gap-3 items-end z-[60]">
-            {/* Comments Preview */}
-            <div className="max-w-[200px] flex flex-col gap-2 mb-2">
-               <AnimatePresence initial={false}>
-                  {comments.slice(0, 3).map((c, i) => (
-                     <motion.div 
-                        key={c.timestamp || i}
-                        initial={{ opacity: 0, x: 20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0 }}
-                        className="bg-black/60 backdrop-blur-md p-2 rounded-xl border border-white/10"
-                     >
-                        <p className="text-[10px] font-black text-blue-400">{c.name}</p>
-                        <p className="text-[11px] text-white leading-tight">{c.text}</p>
-                     </motion.div>
-                  ))}
-               </AnimatePresence>
-            </div>
 
-            <div className="flex gap-2">
-               {showCommentInput ? (
-                  <motion.div 
-                     initial={{ width: 0, opacity: 0 }}
-                     animate={{ width: 'auto', opacity: 1 }}
-                     className="flex gap-2 bg-black/60 backdrop-blur-xl p-1 rounded-2xl border border-white/20"
-                  >
-                     <input 
-                        autoFocus
-                        value={commentText}
-                        onChange={(e) => setCommentText(e.target.value)}
-                        onKeyDown={(e) => {
-                           if (e.key === 'Enter' && commentText.trim()) {
-                              onMove({ type: 'game_comment', text: commentText, user_id: duelMode.userId, user_name: duelMode.userName || 'Spectateur' });
-                              setCommentText('');
-                              setShowCommentInput(false);
-                           }
-                           if (e.key === 'Escape') setShowCommentInput(false);
-                        }}
-                        placeholder="Votre message..."
-                        className="bg-transparent border-0 text-white text-sm px-4 py-2 focus:ring-0 outline-none min-w-[200px]"
-                     />
-                     <Button 
-                        onClick={() => {
-                           if (commentText.trim()) {
-                              onMove({ type: 'game_comment', text: commentText, user_id: duelMode.userId, user_name: duelMode.userName || 'Spectateur' });
-                              setCommentText('');
-                              setShowCommentInput(false);
-                           }
-                        }}
-                        className="bg-blue-600 hover:bg-blue-500 rounded-xl px-4"
-                     >
-                        Envoyer
-                     </Button>
-                  </motion.div>
-               ) : (
-                  <>
-                     <Button
-                       onClick={() => setShowCommentInput(true)}
-                       className="bg-white/10 hover:bg-white/20 text-white rounded-2xl border border-white/20 p-4 h-14"
-                     >
-                       💬 Commenter
-                     </Button>
-                     <Button
-                       onClick={() => onMove({ type: 'game_like', match_id: duelMode.matchId })}
-                       className="bg-red-500 hover:bg-red-600 text-white rounded-2xl shadow-lg shadow-red-500/30 p-4 h-14"
-                     >
-                       ❤️ Like
-                     </Button>
-                  </>
-               )}
-            </div>
-         </div>
-      )}
 
       {/* Floating Likes Layer */}
       <div className="fixed inset-0 pointer-events-none z-[70] overflow-hidden">

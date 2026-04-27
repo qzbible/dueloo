@@ -149,8 +149,14 @@ const GamePlay = () => {
         }
         
         // FAST PATH: If match ID is in URL, connect socket immediately as spectator
-        if (urlMatchId && !dData) {
-           dData = { matchId: urlMatchId, role: 'spectator', userId: 'anon_' + Math.random().toString(36).substr(2, 5) };
+        // CRITICAL: Overwrite role if it's explicitly requested OR if we are on the /spectate route
+        const isSpectateRoute = window.location.pathname.includes('/spectate');
+        if (urlMatchId && (!dData || requestedRole === 'spectator' || isSpectateRoute)) {
+           dData = { 
+             matchId: urlMatchId, 
+             role: 'spectator', 
+             userId: dData?.userId || ('anon_' + Math.random().toString(36).substr(2, 5)) 
+           };
         }
 
         if (dData) {
@@ -206,8 +212,10 @@ const GamePlay = () => {
 
     socketRef.current.on('spectator_joined', (data) => {
       console.log('[Socket][GamePlay] spectator_joined:', data);
+      const mId = data.current_state?.mode_id || dData.mode_id || modeId;
       const recoveredData = {
         ...dData,
+        mode_id: mId,
         gameData: data.current_state?.game_data || data.current_state,
         likes: data.likes,
         comments: data.comments
@@ -264,12 +272,15 @@ const GamePlay = () => {
 
   const onPlayerMove = (moveData) => {
     if (duelMode && socketRef.current) {
+        const mId = duelMode.matchId || duelMode.gameData?.match_id;
+        console.log('[Socket][GamePlay] Sending move/social to match:', mId, moveData.type);
+        
         if (moveData.type === 'game_like') {
-            socketRef.current.emit('game_like', { match_id: duelMode.matchId, ...moveData });
+            socketRef.current.emit('game_like', { match_id: mId, ...moveData });
         } else if (moveData.type === 'game_comment') {
-            socketRef.current.emit('game_comment', { match_id: duelMode.matchId, ...moveData });
+            socketRef.current.emit('game_comment', { match_id: mId, ...moveData });
         } else {
-            socketRef.current.emit('game_move', { match_id: duelMode.matchId, ...moveData });
+            socketRef.current.emit('game_move', { match_id: mId, ...moveData });
         }
     }
   };
@@ -280,10 +291,10 @@ const GamePlay = () => {
       
       let sessionRes = { data: { session_id: null, match_id: dData?.matchId, game_data: recovered } };
       let modeRes = gameMode;
-
       if (dData?.role === 'spectator') {
         // SPECTATOR: Get mode metadata only, skip creating/starting a game session
-        modeRes = await db_get_mode(modeId);
+        const mId = dData?.mode_id || modeId;
+        modeRes = mId ? await db_get_mode(mId) : null;
       } else {
         // PLAYER: Normal start/resume
         const [sRes, mRes] = await Promise.all([
@@ -312,16 +323,24 @@ const GamePlay = () => {
 
       if (dData && dData.matchId) {
         saveDuelSession(dData, sessionRes.data.session_id);
-        setDuelMode(prev => ({ 
-          ...prev, 
-          matchId: dData.matchId,
-          role: dData.role,              // ALWAYS preserved from original join
-          userId: dData.userId,
-          max_players: dData.max_players || prev?.max_players || 2,  // ALWAYS preserved
-          mode_id: dData.mode_id || modeId,
-          gameData: sessionRes.data.game_data, 
-          config: state?.config 
-        }));
+        setDuelMode(prev => {
+          const base = {
+            ...prev,
+            matchId: dData.matchId,
+            role: dData.role,
+            userId: dData.userId,
+            max_players: dData.max_players || prev?.max_players || 2,
+            mode_id: dData.mode_id || modeId,
+            config: state?.config
+          };
+          // Only update gameData if sessionRes actually has it, otherwise preserve socket-provided data
+          if (sessionRes.data.game_data) {
+            base.gameData = sessionRes.data.game_data;
+          } else if (recovered) {
+            base.gameData = recovered;
+          }
+          return base;
+        });
       } else if (matchId) {
         // Solo/AI game with Live Spectator support
         const soloData = {
@@ -334,7 +353,10 @@ const GamePlay = () => {
         saveDuelSession(soloData, sessionRes.data.session_id);
         setDuelMode(soloData);
         setBothReady(true);
-        setupSocket(soloData); // Initialize live sync even for solo
+        // ONLY setup socket if not already spectating
+        if (!socketRef.current) {
+          setupSocket(soloData);
+        }
       } else {
         setBothReady(true);
         // Ensure we DON'T have a matchId if it's AI mode
@@ -572,7 +594,7 @@ const GamePlay = () => {
               </div>
               <Button
                 onClick={() => {
-                  const link = `${window.location.origin}/spectate?match=${duelMode.matchId}`;
+                  const link = `${window.location.origin}/spectate?match=${duelMode.matchId}&requested_role=spectator`;
                   navigator.clipboard.writeText(link);
                   toast.success(t('dashboard.copied') || 'Lien spectateur copié avec succès !');
                 }}

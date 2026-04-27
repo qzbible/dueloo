@@ -14,6 +14,7 @@ import random
 import string
 import logging
 import httpx
+from datetime import datetime
 
 from database import db, client
 from models import User, UserSession, GameStartRequest, GameSubmitRequest, CheckoutRequest, DuoMatchRequest, CreateGroupSessionRequest, JoinGroupRequest
@@ -43,7 +44,7 @@ sio = socketio.AsyncServer(
 )
 
 fastapi_app = FastAPI()
-socket_app = socketio.ASGIApp(sio, fastapi_app, socketio_path='api/socket.io')
+socket_app = socketio.ASGIApp(sio, fastapi_app, socketio_path='/api/socket.io')
 
 api_router = __import__('fastapi', fromlist=['APIRouter']).APIRouter(prefix="/api")
 
@@ -803,10 +804,11 @@ async def force_start_match(sid, data):
 
 @sio.event
 async def spectate_match(sid, data):
-    match_id = data.get("match_id")
+    match_id = str(data.get("match_id", "")).strip()
     user_id = data.get("user_id", "anonymous")
     user_name = data.get("user_name", "Spectateur")
     
+    print(f"[Socket] spectate_match: sid={sid}, match={match_id}")
     await sio.enter_room(sid, match_id)
     duo_rooms.setdefault(match_id, {})[sid] = {"user_id": user_id, "role": "spectator", "name": user_name}
     
@@ -815,12 +817,17 @@ async def spectate_match(sid, data):
     likes = interaction_manager.get_likes(match_id)
     comments = interaction_manager.get_comments(match_id)
     
+    safe_match = match or {}
     await sio.emit("spectator_joined", {
         "match_id": match_id, 
         "likes": likes,
         "comments": comments,
-        "current_state": match
+        "current_state": {
+            **(safe_match.get("game_data") if safe_match.get("game_data") else safe_match),
+            "mode_id": safe_match.get("mode_id", "ludo")
+        }
     }, room=sid)
+    print(f"[Socket] spectate_joined sent to {sid} with state keys: {list(safe_match.get('game_data', {}).keys()) if safe_match else 'None'}")
 
     spectators = [v for v in duo_rooms.get(match_id, {}).values() if v.get("role") == "spectator"]
     await sio.emit("spectator_count", {"count": len(spectators)}, room=match_id)
@@ -1014,7 +1021,16 @@ async def send_emoji(sid, data):
 
 @sio.event
 async def game_move(sid, data):
-    match_id = data.get("match_id")
+    match_id = str(data.get("match_id", "")).strip()
+    
+    # ── GUARD CLAUSE: Validation Read-Only ──
+    # Vérification anti-triche : un spectateur ne peut pas modifier l'état du jeu
+    user_session = duo_rooms.get(match_id, {}).get(sid)
+    if user_session and user_session.get("role") == "spectator":
+        print(f"[Socket] SECURITY REJECT: Spectator {sid} ({user_session.get('name')}) attempted to send a game_move for match {match_id}!")
+        return
+
+    print(f"[Socket] game_move from {sid} for match {match_id}")
     await sio.emit("opponent_move", data, room=match_id, skip_sid=sid)
     
     if "boardState" in data:
