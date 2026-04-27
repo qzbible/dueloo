@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Button } from '../ui/button';
 
 // ─── BOARD GEOMETRY ──────────────────────────────────────────────────────────
 // Each cell in the 15×15 grid has a type:
@@ -214,7 +215,7 @@ const INIT = {
   turn: 'R', dice: null, rolled: false, winner: null, restrictedPieceId: null,
 };
 
-const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove, bothReady, isSpectator = false }) => {
+const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove = () => {}, bothReady, isSpectator = false }) => {
 
   const [gs, setGs]               = useState(() => {
     const saved = duelMode?.recovered?.pieces ? duelMode.recovered
@@ -228,10 +229,27 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove, bot
   const [shakeBoard, setShakeBoard]= useState(false);
   const [captureKey, setCaptureKey]= useState(null);
   const [showRules, setShowRules]  = useState(false);
+  const [likes, setLikes]          = useState({}); 
+  const [comments, setComments]    = useState(duelMode?.gameData?.comments || []);
+  const [floatingLikes, setFloatingLikes] = useState([]); // Array of { id, x, y }
+  const [showCommentInput, setShowCommentInput] = useState(false);
+  const [commentText, setCommentText] = useState('');
   const aiRunningRef               = useRef(false);
 
   // Keep gsRef in sync
   useEffect(() => { gsRef.current = gs; }, [gs]);
+
+  // Initial Sync from Socket/recovered data
+  useEffect(() => {
+    const data = duelMode?.gameData?.pieces ? duelMode.gameData : duelMode?.recovered;
+    if (data?.pieces) {
+      setGs(data);
+      gsRef.current = data;
+    }
+    if (duelMode?.gameData?.comments) {
+      setComments(duelMode.gameData.comments);
+    }
+  }, [duelMode?.gameData, duelMode?.recovered]);
 
   const { pieces, turn, dice, rolled, winner, restrictedPieceId } = gs;
 
@@ -358,7 +376,8 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove, bot
 
   // ── REMOTE PIECE MOVE (for visual sync only) ──────────────────────────────────
   const doMoveRemote = useCallback(async (color, pieceId, d) => {
-    if (animPiece) return;
+    // If already animating, we must wait or queue. In this simple version, 
+    // we take the lock but don't bail out if it's a remote move being processed by the queue.
     const startPos = gsRef.current.pieces[color][pieceId];
     
     if (startPos <= -10) {
@@ -373,7 +392,7 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove, bot
       }
       setAnimPiece(null);
     }
-  }, [animPiece]);
+  }, []); // Static callback
 
   // ── HUMAN DICE ROLL ───────────────────────────────────────────────────────────
   const doRoll = () => {
@@ -488,21 +507,34 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove, bot
           else if (opMove.type === 'ludo_dice') {
             setGs(prev => {
               const fresh = { ...prev, dice: opMove.diceVal, rolled: true };
-              gsRef.current = fresh; // Sync math for impending animations within same queue
+              gsRef.current = fresh;
               return fresh;
             });
             setRolling(false);
           }
           else if (opMove.type === 'ludo_anim') {
+            // Wait for any previous animation to finish
+            while (animPiece) { await sleep(50); }
             await doMoveRemote(opMove.color, opMove.pieceId, opMove.diceVal);
           }
           else if (opMove.type === 'ludo_state') {
+            // Wait for animations to settle before snapping state
+            while (animPiece) { await sleep(50); }
             setGs(opMove);
-            gsRef.current = opMove; // Sync math unconditionally
+            gsRef.current = opMove;
+          }
+          else if (opMove.type === 'social_like') {
+            const id = Math.random();
+            setFloatingLikes(prev => [...prev, { id, x: Math.random() * 80 + 10, y: 80 }]);
+            setTimeout(() => setFloatingLikes(prev => prev.filter(l => l.id !== id)), 2000);
+            if (opMove.player_role) setLikes(prev => ({ ...prev, [opMove.player_role]: opMove.count }));
+          }
+          else if (opMove.type === 'social_comment') {
+            setComments(prev => [opMove.comment, ...prev].slice(0, 50));
           }
           
           processedIndexRef.current++;
-          await sleep(20); // Small DOM flush buffer
+          await sleep(50); // Improved buffer
         }
       } finally {
         queueRunningRef.current = false;
@@ -527,6 +559,24 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove, bot
   // ── RENDER ───────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col items-center select-none py-4 px-2 w-full">
+      {/* ── LIVE INDICATOR ────────────────────────────────────────────────── */}
+      {(isMultiplayer || isSpectator) && (
+        <div className="mb-4 flex flex-col items-center gap-1">
+          <motion.div 
+            animate={{ scale: [1, 1.05, 1] }} 
+            transition={{ repeat: Infinity, duration: 2 }}
+            className="flex items-center gap-2 bg-red-500/10 backdrop-blur-md px-4 py-1.5 rounded-full border border-red-500/20 shadow-lg shadow-red-500/5"
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+            </span>
+            <span className="text-[10px] font-black text-red-500 uppercase tracking-widest">
+              {isSpectator ? 'Direct Live' : 'Match Diffusé'}
+            </span>
+          </motion.div>
+        </div>
+      )}
 
       {/* ── HEADER: turn indicator + dice ─────────────────────────────────── */}
       <div className="w-full max-w-lg mb-4 flex items-center justify-between gap-3 px-2">
@@ -848,6 +898,100 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove, bot
           </div>
         )}
       </AnimatePresence>
+
+      {/* ── SPECTATOR ACTIONS ────────────────────────────────────────────────── */}
+      {isSpectator && (
+         <div className="fixed bottom-24 right-6 flex flex-col gap-3 items-end z-[60]">
+            {/* Comments Preview */}
+            <div className="max-w-[200px] flex flex-col gap-2 mb-2">
+               <AnimatePresence initial={false}>
+                  {comments.slice(0, 3).map((c, i) => (
+                     <motion.div 
+                        key={c.timestamp || i}
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0 }}
+                        className="bg-black/60 backdrop-blur-md p-2 rounded-xl border border-white/10"
+                     >
+                        <p className="text-[10px] font-black text-blue-400">{c.name}</p>
+                        <p className="text-[11px] text-white leading-tight">{c.text}</p>
+                     </motion.div>
+                  ))}
+               </AnimatePresence>
+            </div>
+
+            <div className="flex gap-2">
+               {showCommentInput ? (
+                  <motion.div 
+                     initial={{ width: 0, opacity: 0 }}
+                     animate={{ width: 'auto', opacity: 1 }}
+                     className="flex gap-2 bg-black/60 backdrop-blur-xl p-1 rounded-2xl border border-white/20"
+                  >
+                     <input 
+                        autoFocus
+                        value={commentText}
+                        onChange={(e) => setCommentText(e.target.value)}
+                        onKeyDown={(e) => {
+                           if (e.key === 'Enter' && commentText.trim()) {
+                              onMove({ type: 'game_comment', text: commentText, user_id: duelMode.userId, user_name: duelMode.userName || 'Spectateur' });
+                              setCommentText('');
+                              setShowCommentInput(false);
+                           }
+                           if (e.key === 'Escape') setShowCommentInput(false);
+                        }}
+                        placeholder="Votre message..."
+                        className="bg-transparent border-0 text-white text-sm px-4 py-2 focus:ring-0 outline-none min-w-[200px]"
+                     />
+                     <Button 
+                        onClick={() => {
+                           if (commentText.trim()) {
+                              onMove({ type: 'game_comment', text: commentText, user_id: duelMode.userId, user_name: duelMode.userName || 'Spectateur' });
+                              setCommentText('');
+                              setShowCommentInput(false);
+                           }
+                        }}
+                        className="bg-blue-600 hover:bg-blue-500 rounded-xl px-4"
+                     >
+                        Envoyer
+                     </Button>
+                  </motion.div>
+               ) : (
+                  <>
+                     <Button
+                       onClick={() => setShowCommentInput(true)}
+                       className="bg-white/10 hover:bg-white/20 text-white rounded-2xl border border-white/20 p-4 h-14"
+                     >
+                       💬 Commenter
+                     </Button>
+                     <Button
+                       onClick={() => onMove({ type: 'game_like', match_id: duelMode.matchId })}
+                       className="bg-red-500 hover:bg-red-600 text-white rounded-2xl shadow-lg shadow-red-500/30 p-4 h-14"
+                     >
+                       ❤️ Like
+                     </Button>
+                  </>
+               )}
+            </div>
+         </div>
+      )}
+
+      {/* Floating Likes Layer */}
+      <div className="fixed inset-0 pointer-events-none z-[70] overflow-hidden">
+         <AnimatePresence>
+            {floatingLikes.map(like => (
+               <motion.div
+                  key={like.id}
+                  initial={{ y: '80vh', x: `${like.x}vw`, opacity: 0, scale: 0.5 }}
+                  animate={{ y: '20vh', opacity: [0, 1, 1, 0], scale: [0.5, 1.2, 1, 0.8] }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 2, ease: "easeOut" }}
+                  className="absolute text-3xl"
+               >
+                  ❤️
+               </motion.div>
+            ))}
+         </AnimatePresence>
+      </div>
     </div>
   );
 };

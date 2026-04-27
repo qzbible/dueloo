@@ -148,43 +148,20 @@ const GamePlay = () => {
            }
         }
         
-        // Last resort: fetch from API (role determined by server-side user lookup)
-        if (!dData && urlMatchId) {
-          const response = await axios.get(`${BACKEND_URL}/api/duo/match/${urlMatchId}`, { withCredentials: true });
-          dData = {
-            matchId: response.data.match_id,
-            role: response.data.role,
-            userId: response.data.user_id,
-            max_players: response.data.max_players,
-            mode_id: modeId
-          };
+        // FAST PATH: If match ID is in URL, connect socket immediately as spectator
+        if (urlMatchId && !dData) {
+           dData = { matchId: urlMatchId, role: 'spectator', userId: 'anon_' + Math.random().toString(36).substr(2, 5) };
         }
 
         if (dData) {
           saveDuelSession(dData);
           setDuelMode(dData);
+          // If it's a spectator, setupSocket will trigger spectate_match and get the state
           setupSocket(dData, true);
           
-          // Try to resume existing session if we have a sessionId saved
-          const savedSession = dData.sessionId;
-          if (savedSession) {
-            try {
-              const sessionRes = await axios.get(`${BACKEND_URL}/api/games/session/${savedSession}`, { withCredentials: true });
-              console.log("Resuming existing session:", savedSession);
-              setGameSession(savedSession);
-              setDuelMode(prev => prev ? { ...prev, gameData: sessionRes.data.game_data } : dData);
-              setLoading(false);
-              return;
-            } catch (e) {
-              console.log("Session expired, starting new game.");
-            }
-          }
-          
-          // Fetch full match state and start game with recovered context
-          try {
-            const matchRes = await axios.get(`${BACKEND_URL}/api/duo/match/${dData.matchId}`, { withCredentials: true });
-            startGame(dData, matchRes.data.current_state.game_data);
-          } catch (e) {
+          if (dData.role !== 'spectator') {
+            // For players, we might still want to fetch initial state context to avoid UI flicker
+            // But for Ludo, startGame will fetch it.
             startGame(dData);
           }
         } else {
@@ -212,12 +189,31 @@ const GamePlay = () => {
     });
 
     socketRef.current.on('connect', () => {
-      const event = isRejoining ? 'rejoin_duo_room' : 'join_duo_room';
-      socketRef.current.emit(event, {
-        match_id: dData.matchId,
-        user_id: dData.userId,
-        role: dData.role
-      });
+      if (dData.role === 'spectator') {
+        socketRef.current.emit('spectate_match', {
+          match_id: dData.matchId,
+          user_id: dData.userId
+        });
+      } else {
+        const event = isRejoining ? 'rejoin_duo_room' : 'join_duo_room';
+        socketRef.current.emit(event, {
+          match_id: dData.matchId,
+          user_id: dData.userId,
+          role: dData.role
+        });
+      }
+    });
+
+    socketRef.current.on('spectator_joined', (data) => {
+      console.log('[Socket][GamePlay] spectator_joined:', data);
+      const recoveredData = {
+        ...dData,
+        gameData: data.current_state?.game_data || data.current_state,
+        likes: data.likes,
+        comments: data.comments
+      };
+      setDuelMode(recoveredData);
+      startGame(recoveredData, recoveredData.gameData);
     });
 
     socketRef.current.on('joined_room', (data) => {
@@ -252,34 +248,63 @@ const GamePlay = () => {
       console.log('[Socket][GamePlay] opponent_disconnected:', data);
       toast.info("Un joueur s'est déconnecté de la partie.");
     });
+
+    socketRef.current.on('like_update', (data) => {
+      setOpponentMoveQueue(prev => [...prev, { ...data, type: 'social_like' }]);
+    });
+
+    socketRef.current.on('new_comment', (data) => {
+      setOpponentMoveQueue(prev => [...prev, { ...data, type: 'social_comment' }]);
+    });
+
+    socketRef.current.on('new_reaction', (data) => {
+      setOpponentMoveQueue(prev => [...prev, { type: 'social_reaction', ...data }]);
+    });
   };
 
   const onPlayerMove = (moveData) => {
     if (duelMode && socketRef.current) {
-        socketRef.current.emit('game_move', { match_id: duelMode.matchId, ...moveData });
+        if (moveData.type === 'game_like') {
+            socketRef.current.emit('game_like', { match_id: duelMode.matchId, ...moveData });
+        } else if (moveData.type === 'game_comment') {
+            socketRef.current.emit('game_comment', { match_id: duelMode.matchId, ...moveData });
+        } else {
+            socketRef.current.emit('game_move', { match_id: duelMode.matchId, ...moveData });
+        }
     }
   };
 
   const startGame = async (dData = null, recovered = null) => {
     try {
       setOpponentMoveQueue([]); // Flush ghosts from previous games
-      const [sessionRes, modeRes] = await Promise.all([
+      
+      let sessionRes = { data: { session_id: null, match_id: dData?.matchId, game_data: recovered } };
+      let modeRes = gameMode;
 
-        axios.post(
-          `${BACKEND_URL}/api/games/start`,
-          { 
-            mode_id: modeId, 
-            lang,
-            config: {
-              ...(state?.config || (dData ? { opponent: 'human' } : {})),
-              match_id: dData?.matchId || state?.config?.match_id,
-              max_players: dData?.max_players  // Pass max_players to session
+      if (dData?.role === 'spectator') {
+        // SPECTATOR: Get mode metadata only, skip creating/starting a game session
+        modeRes = await db_get_mode(modeId);
+      } else {
+        // PLAYER: Normal start/resume
+        const [sRes, mRes] = await Promise.all([
+          axios.post(
+            `${BACKEND_URL}/api/games/start`,
+            { 
+              mode_id: modeId, 
+              lang,
+              config: {
+                ...(state?.config || (dData ? { opponent: 'human' } : {})),
+                match_id: dData?.matchId || state?.config?.match_id,
+                max_players: dData?.max_players  // Pass max_players to session
+              },
             },
-          },
-          { withCredentials: true }
-        ),
-        db_get_mode(modeId) // fetch mode metadata for display
-      ]);
+            { withCredentials: true }
+          ),
+          db_get_mode(modeId)
+        ]);
+        sessionRes = sRes;
+        modeRes = mRes;
+      }
       
       setGameSession(sessionRes.data.session_id);
 
@@ -327,7 +352,7 @@ const GamePlay = () => {
       setLoading(false);
     } catch (error) {
       console.error('Erreur démarrage jeu:', error);
-      alert('Erreur lors du démarrage du jeu');
+      toast.error('Erreur lors du démarrage du jeu');
       navigate('/games');
     }
   };
@@ -359,7 +384,7 @@ const GamePlay = () => {
       }
     } catch (error) {
       console.error('Erreur soumission:', error);
-      alert('Erreur lors de la soumission');
+      toast.error('Erreur lors de la soumission');
     }
   };
 
@@ -431,10 +456,20 @@ const GamePlay = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 to-purple-900">
+      <div className="min-h-screen flex items-center justify-center bg-[#0f172a]" style={{ background: 'radial-gradient(circle at center, #1e293b 0%, #0f172a 100%)' }}>
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-yellow-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-white text-lg">{t('games.loading_game')}</p>
+          <div className="relative w-24 h-24 mx-auto mb-8">
+            <div className="absolute inset-0 border-4 border-blue-500/20 rounded-full"></div>
+            <div className="absolute inset-0 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            <div className="absolute inset-0 flex items-center justify-center">
+               <Eye className="w-8 h-8 text-blue-400 animate-pulse" />
+            </div>
+          </div>
+          <h2 className="text-2xl font-black text-white mb-2 tracking-tight">CONNEXION AU LIVE</h2>
+          <p className="text-blue-400 font-medium animate-pulse flex items-center justify-center gap-2">
+             <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+             SYNCHRONISATION TEMPS RÉEL...
+          </p>
         </div>
       </div>
     );
