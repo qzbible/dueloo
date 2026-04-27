@@ -559,6 +559,7 @@ const GamePlay = () => {
               matchId={duelMode.matchId} 
               role={duelMode.role} 
               userId={duelMode.userId}
+              duelMode={duelMode}
             />
           </div>
         )}

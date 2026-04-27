@@ -25,7 +25,7 @@ const STUN_SERVERS = {
   ],
 };
 
-const VoiceChat = ({ socket, matchId, role, userId }) => {
+const VoiceChat = ({ socket, matchId, role, userId, duelMode }) => {
   const [isMuted, setIsMuted] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState(null);
@@ -41,12 +41,28 @@ const VoiceChat = ({ socket, matchId, role, userId }) => {
   const iceQueuesRef = useRef(new Map()); // map of sid -> candidate[]
   
   const audioContextRef = useRef(null);
-  const remoteAnalyzersRef = useRef(new Map()); // map of sid -> analyzer
-  const remoteSourcesRef = useRef(new Map()); // map of sid -> source
+  const remoteAnalyzersRef = useRef(new Map()); 
+  const remoteSourcesRef = useRef(new Map()); 
+  
+  const [remoteParticipants, setRemoteParticipants] = useState([]); // Array of { sid, role, activity }
 
   useEffect(() => {
     if (!socket || !matchId || !role) return;
     let cancelled = false;
+
+    const optimizeSDP = (sdp) => {
+      let lines = sdp.split('\r\n');
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].startsWith('a=fmtp:')) {
+          // Check if this payload type corresponds to opus
+          const pt = lines[i].match(/a=fmtp:(\d+)/)?.[1];
+          if (pt && sdp.includes(`a=rtpmap:${pt} opus/48000`)) {
+            lines[i] = `a=fmtp:${pt} maxaveragebitrate=64000;usedtx=1;sprop-stereo=0`;
+          }
+        }
+      }
+      return lines.join('\r\n');
+    };
 
     const getOrCreatePC = (sid, isInitiator = false) => {
       if (peerConnectionsRef.current.has(sid)) return peerConnectionsRef.current.get(sid);
@@ -68,9 +84,9 @@ const VoiceChat = ({ socket, matchId, role, userId }) => {
         if (!audioEl) {
           audioEl = document.createElement('audio');
           audioEl.autoplay = true;
-          audioEl.playsInline = true; // Crucial for iOS Safari
+          audioEl.playsInline = true; 
           audioEl.style.display = 'none';
-          document.body.appendChild(audioEl); // Must be in DOM for iOS Safari to honor it reliably
+          document.body.appendChild(audioEl);
           remoteAudioElementsRef.current.set(sid, audioEl);
         }
         audioEl.srcObject = rStream;
@@ -81,6 +97,12 @@ const VoiceChat = ({ socket, matchId, role, userId }) => {
         if (audioContextRef.current?.state === 'running') {
           wireRemoteVisualizer(sid, rStream);
         }
+        
+        // Update participants list
+        setRemoteParticipants(prev => {
+          if (prev.find(p => p.sid === sid)) return prev;
+          return [...prev, { sid, role: 'unknown', activity: 0 }];
+        });
       };
 
       pc.onicecandidate = (e) => {
@@ -100,7 +122,6 @@ const VoiceChat = ({ socket, matchId, role, userId }) => {
           setIsConnected(true);
         }
         if (s === 'disconnected' || s === 'failed') {
-          // If all connections are dead, setIsConnected(false)
           const anyActive = Array.from(peerConnectionsRef.current.values())
             .some(conn => ['connected', 'completed'].includes(conn.iceConnectionState));
           setIsConnected(anyActive);
@@ -112,17 +133,31 @@ const VoiceChat = ({ socket, matchId, role, userId }) => {
 
     const handleOffer = async (data) => {
       if (cancelled) return;
-      const sid = data.from_sid || 'player'; // fallback for backward compatibility
+      const sid = data.from_sid || 'player';
+      const pRole = data.role || 'unknown';
       const pc = getOrCreatePC(sid, false);
       
+      setRemoteParticipants(prev => {
+        if (prev.find(p => p.sid === sid)) {
+           return prev.map(p => p.sid === sid ? { ...p, role: pRole } : p);
+        }
+        return [...prev, { sid, role: pRole, activity: 0 }];
+      });
+      
       try {
-        await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+        const desc = new RTCSessionDescription({
+          type: 'offer',
+          sdp: optimizeSDP(data.offer.sdp)
+        });
+        await pc.setRemoteDescription(desc);
         const answer = await pc.createAnswer();
+        answer.sdp = optimizeSDP(answer.sdp);
         await pc.setLocalDescription(answer);
         socket.emit('webrtc_answer', { 
           match_id: matchId, 
           answer,
-          target_sid: sid
+          target_sid: sid,
+          role: role // Send my role
         });
         
         const queue = iceQueuesRef.current.get(sid) || [];
@@ -135,10 +170,19 @@ const VoiceChat = ({ socket, matchId, role, userId }) => {
     const handleAnswer = async (data) => {
       if (cancelled) return;
       const sid = data.from_sid || 'player';
+      const pRole = data.role || 'unknown';
       const pc = peerConnectionsRef.current.get(sid);
       if (!pc) return;
+      
+      setRemoteParticipants(prev => prev.map(p => 
+        p.sid === sid ? { ...p, role: pRole } : p
+      ));
       try {
-        await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+        const desc = new RTCSessionDescription({
+          type: 'answer',
+          sdp: optimizeSDP(data.answer.sdp)
+        });
+        await pc.setRemoteDescription(desc);
         const queue = iceQueuesRef.current.get(sid) || [];
         while (queue.length > 0) {
           await pc.addIceCandidate(new RTCIceCandidate(queue.shift()));
@@ -162,18 +206,33 @@ const VoiceChat = ({ socket, matchId, role, userId }) => {
     };
 
     const handleStartWebRTC = async (data) => {
-      if (cancelled || role !== 'player1') return;
-      const p2Sid = data.player2_sid;
-      if (!p2Sid) {
-        console.error("Missing player2_sid in start_webrtc");
-        return;
+      if (cancelled) return;
+      
+      // Full Mesh Logic: player[N] initiates to player[M] if M > N
+      // data contains player1_sid, player2_sid, player3_sid, player4_sid
+      const myRoleIndex = parseInt(role.replace('player', ''));
+      if (isNaN(myRoleIndex)) return; // Spectators are receivers only
+
+      for (let i = 1; i <= 4; i++) {
+        if (i <= myRoleIndex) continue; // Only call higher indices
+        
+        const targetSid = data[`player${i}_sid`];
+        if (targetSid && targetSid !== socket.id) {
+          console.log(`[FullMesh] Initiating call: ${role} -> player${i} (${targetSid})`);
+          const pc = getOrCreatePC(targetSid, true);
+          try {
+            let offer = await pc.createOffer();
+            offer = { type: 'offer', sdp: optimizeSDP(offer.sdp) };
+            await pc.setLocalDescription(offer);
+            socket.emit('webrtc_offer', { 
+              match_id: matchId, 
+              offer, 
+              target_sid: targetSid,
+              role: role 
+            });
+          } catch (err) { console.error(`[FullMesh] Offer error to player${i}:`, err); }
+        }
       }
-      const pc = getOrCreatePC(p2Sid, true); // P1 connects to P2 accurately
-      try {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        socket.emit('webrtc_offer', { match_id: matchId, offer, target_sid: p2Sid });
-      } catch (err) { console.error("Offer creation error:", err); }
     };
 
     const handleSpectatorVoiceReady = async (data) => {
@@ -182,35 +241,74 @@ const VoiceChat = ({ socket, matchId, role, userId }) => {
       console.log("Initiating outgoing voice to spectator:", specSid);
       const pc = getOrCreatePC(specSid, true);
       try {
-        const offer = await pc.createOffer();
+        let offer = await pc.createOffer();
+        offer = { type: 'offer', sdp: optimizeSDP(offer.sdp) };
         await pc.setLocalDescription(offer);
         socket.emit('webrtc_offer', { 
           match_id: matchId, 
           offer, 
-          target_sid: specSid 
+          target_sid: specSid,
+          role: role // 'player1', etc.
         });
       } catch (err) { console.error("Spectator offer error:", err); }
+    };
+
+    const handleOpponentDisconnected = (data) => {
+      const targetSid = data.sid;
+      if (!targetSid) return;
+      
+      console.log(`[VoiceChat] Cleaning up disconnected peer: ${targetSid}`);
+      
+      const pc = peerConnectionsRef.current.get(targetSid);
+      if (pc) {
+        try { pc.close(); } catch(e) {}
+        peerConnectionsRef.current.delete(targetSid);
+      }
+      
+      const audioEl = remoteAudioElementsRef.current.get(targetSid);
+      if (audioEl) {
+        try {
+          audioEl.pause();
+          audioEl.srcObject = null;
+          audioEl.remove();
+        } catch(e) {}
+        remoteAudioElementsRef.current.delete(targetSid);
+      }
+      
+      setRemoteParticipants(prev => prev.filter(p => p.sid !== targetSid));
+      
+      if (remoteAnalyzersRef.current.has(targetSid)) {
+        remoteAnalyzersRef.current.delete(targetSid);
+      }
+      if (remoteSourcesRef.current.has(targetSid)) {
+        try { remoteSourcesRef.current.get(targetSid).disconnect(); } catch(e) {}
+        remoteSourcesRef.current.delete(targetSid);
+      }
     };
 
     const setup = async () => {
       try {
         if (!isSpectator) {
           const stream = await navigator.mediaDevices.getUserMedia({
-            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+            audio: { 
+              echoCancellation: true, 
+              noiseSuppression: true, 
+              autoGainControl: true,
+              sampleRate: 48000,
+              channelCount: 1
+            }
           });
           if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
           localStreamRef.current = stream;
           stream.getAudioTracks().forEach(t => { t.enabled = false; });
         }
 
-        socket.on('webrtc_offer', (data) => {
-           // On server-side we now wrap and add from_sid, but here we just accept
-           handleOffer(data);
-        });
+        socket.on('webrtc_offer', handleOffer);
         socket.on('webrtc_answer', handleAnswer);
         socket.on('webrtc_ice_candidate', handleIce);
         socket.on('start_webrtc', handleStartWebRTC);
         socket.on('spectator_voice_ready', handleSpectatorVoiceReady);
+        socket.on('opponent_disconnected', handleOpponentDisconnected);
 
         const onUnlock = () => {
           console.log("Audio unlocked via global event");
@@ -246,6 +344,7 @@ const VoiceChat = ({ socket, matchId, role, userId }) => {
       socket.off('webrtc_ice_candidate');
       socket.off('start_webrtc');
       socket.off('spectator_voice_ready');
+      socket.off('opponent_disconnected');
 
       if (audioContextRef.current?.state !== 'closed') {
         audioContextRef.current?.close().catch(() => {});
@@ -272,11 +371,10 @@ const VoiceChat = ({ socket, matchId, role, userId }) => {
         an.getByteFrequencyData(buf);
         const activity = buf.reduce((a, b) => a + b, 0) / buf.length;
         
-        // Update global remote activity (simple max for now)
-        setRemoteActivity(prev => Math.max(prev, activity));
-        
-        // Reset after a short delay
-        setTimeout(() => setRemoteActivity(0), 100);
+        // Update individual activity
+        setRemoteParticipants(prev => prev.map(p => 
+          p.sid === sid ? { ...p, activity: activity } : p
+        ));
         
         requestAnimationFrame(tick);
       };
@@ -346,18 +444,76 @@ const VoiceChat = ({ socket, matchId, role, userId }) => {
     window.dispatchEvent(new CustomEvent('force_webrtc_restart'));
   };
 
+  const getParticipantInfo = (pRole) => {
+    // Try to find in duelMode
+    const match = duelMode?.gameData;
+    if (!match) return { name: pRole, picture: null };
+    
+    // Some match structures use player1_name, others differ. Try to be robust.
+    return {
+      name: match[`${pRole}_name`] || pRole,
+      picture: match[`${pRole}_picture`] || null
+    };
+  };
+
+  const renderParticipant = (p, index) => {
+    const info = getParticipantInfo(p.role === 'unknown' ? `player${index + 2}` : p.role);
+    const isSpeaking = p.activity > 10;
+    
+    return (
+      <motion.div
+        key={p.sid}
+        initial={{ scale: 0.8, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="relative group"
+      >
+        <div className={`w-12 h-12 rounded-full border-2 transition-all duration-300 flex items-center justify-center bg-slate-800 overflow-hidden ${
+          isSpeaking ? 'border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.4)]' : 'border-white/10'
+        }`}>
+          {info.picture ? (
+            <img src={info.picture} alt={info.name} className="w-full h-full object-cover" />
+          ) : (
+            <span className="text-white font-bold text-lg">{info.name[0]?.toUpperCase()}</span>
+          )}
+          
+          {isSpeaking && (
+            <motion.div
+              layoutId={`speaking-${p.sid}`}
+              className="absolute -bottom-1 -right-1 bg-emerald-500 p-1 rounded-full border border-slate-900"
+              animate={{ scale: [1, 1.2, 1] }}
+              transition={{ repeat: Infinity, duration: 1 }}
+            >
+              <Mic size={8} className="text-white" />
+            </motion.div>
+          )}
+        </div>
+        
+        {/* Tooltip / Name */}
+        <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 text-[10px] text-white px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-20 pointer-events-none">
+          {info.name}
+        </div>
+      </motion.div>
+    );
+  };
+
   if (isSpectator) {
     return (
-      <div className="flex items-center gap-2 bg-slate-900/60 backdrop-blur-xl p-1.5 px-3 rounded-full border border-white/10 shadow-2xl">
-        <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+      <div className="flex items-center gap-3 bg-black/40 backdrop-blur-xl p-2 px-4 rounded-2xl border border-white/5 shadow-2xl">
+        <div className="flex -space-x-2">
+          {remoteParticipants.map((p, i) => (
+             <div key={p.sid} className={`w-8 h-8 rounded-full border-2 border-slate-900 bg-slate-800 flex items-center justify-center overflow-hidden ${p.activity > 10 ? 'border-emerald-500' : ''}`}>
+                <span className="text-[10px] text-white font-bold">{getParticipantInfo(`player${i+1}`).name[0]}</span>
+             </div>
+          ))}
+          {remoteParticipants.length === 0 && <span className="text-[10px] text-slate-500 italic">Personne ne parle</span>}
+        </div>
+        <div className="w-[1px] h-4 bg-white/10" />
         <Button
           variant="ghost"
           size="icon"
           onClick={toggleSpeaker}
-          className={`w-8 h-8 rounded-full transition-all duration-300 ${
-            isSpeakerMuted
-              ? 'text-slate-500 hover:text-slate-300'
-              : 'text-blue-400 hover:text-blue-300'
+          className={`w-9 h-9 rounded-xl transition-all duration-300 ${
+            isSpeakerMuted ? 'text-red-400 bg-red-400/10' : 'text-blue-400 bg-blue-400/10'
           }`}
         >
           {isSpeakerMuted ? <VolumeX size={18} /> : <Volume2 size={18} className={isConnected ? "animate-pulse" : ""} />}
@@ -366,88 +522,109 @@ const VoiceChat = ({ socket, matchId, role, userId }) => {
     );
   }
 
+  const myInfo = getParticipantInfo(role);
+
   return (
-    <div className="flex items-center gap-3 bg-slate-900/40 backdrop-blur-md p-3 rounded-2xl border border-white/10 shadow-xl min-w-[200px]">
-      <div className="flex items-center gap-2">
-        <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
-        <span className="text-[10px] font-bold text-blue-200 uppercase tracking-widest">
-          {isConnected ? 'VOIX LIVE' : 'CONNEXION...'}
-        </span>
+    <div className="flex flex-col items-center gap-4">
+      {/* Participants Grid (Meet Style) */}
+      <div className="flex items-center gap-3">
+        {/* Local Player */}
+        <div className="relative group">
+          <div className={`w-14 h-14 rounded-full border-2 transition-all duration-300 flex items-center justify-center bg-slate-800 overflow-hidden ${
+            !isMuted && localActivity > 10 ? 'border-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.4)]' : 'border-white/10'
+          } ${isMuted ? 'opacity-60' : ''}`}>
+            {myInfo.picture ? (
+              <img src={myInfo.picture} alt={myInfo.name} className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-white font-black text-xl">{myInfo.name[0]?.toUpperCase()}</span>
+            )}
+            
+            {!isMuted && localActivity > 10 && (
+              <motion.div
+                className="absolute inset-0 border-2 border-blue-400 rounded-full"
+                animate={{ scale: [1, 1.1, 1], opacity: [0.5, 0, 0.5] }}
+                transition={{ repeat: Infinity, duration: 1.5 }}
+              />
+            )}
+            
+            {isMuted && (
+               <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                  <MicOff size={16} className="text-red-400" />
+               </div>
+            )}
+          </div>
+          {/* Label "Moi" floating */}
+          <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-blue-600 text-[10px] text-white px-2 py-0.5 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-20 pointer-events-none font-bold">
+            Moi ({myInfo.name})
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {remoteParticipants.map((p, i) => renderParticipant(p, i))}
+        </div>
       </div>
 
-      <div className="h-4 w-[1px] bg-white/10 mx-1" />
-
-      {/* Mic Toggle (Player Only) */}
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={toggleMute}
-        className={`w-10 h-10 rounded-xl transition-all duration-300 relative overflow-hidden ${
-          isMuted
-            ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-            : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
-        }`}
+      {/* Control Bar (Glassmorphism) */}
+      <motion.div 
+        initial={{ y: 20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        className="flex items-center gap-2 bg-slate-900/60 backdrop-blur-2xl p-2 rounded-2xl border border-white/10 shadow-2xl"
       >
-        {!isMuted && localActivity > 5 && (
-          <motion.div
-            className="absolute bottom-0 left-0 right-0 bg-emerald-500/40"
-            style={{ height: `${Math.min(localActivity * 2, 100)}%` }}
-          />
-        )}
-        {isMuted ? <MicOff size={20} className="relative z-10" /> : <Mic size={20} className="relative z-10" />}
-      </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={toggleMute}
+          className={`w-10 h-10 rounded-xl transition-all duration-300 ${
+            isMuted
+              ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+              : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
+          }`}
+        >
+          {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
+        </Button>
 
-      {/* Visualizer / Status Activity */}
-      {isConnected ? (
-        <div className="flex items-center gap-3">
-          <div className="flex flex-col gap-0.5 w-10 items-center justify-center">
-              <div className="flex gap-0.5 items-end h-3">
-                {[0.3, 0.7, 1, 0.6, 0.4].map((h, i) => (
-                  <motion.div
-                    key={i}
-                    animate={{ scaleY: remoteActivity > 5 ? [1, 1.5 + h, 1] : 1 }}
-                    transition={{ repeat: Infinity, duration: 0.5, delay: i * 0.1 }}
-                    className="w-0.5 bg-emerald-400 rounded-full h-1.5 origin-bottom"
-                  />
-                ))}
-              </div>
-            <span className="text-[7px] text-emerald-400 uppercase font-black tracking-tighter">PLAYER 🎙️</span>
-          </div>
-          
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={testBip}
-            title="Tester le son (Bip)"
-            className="w-8 h-8 rounded-lg text-slate-500 hover:text-white"
-          >
-            <Bell size={14} />
-          </Button>
-        </div>
-      ) : (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={toggleSpeaker}
+          className={`w-10 h-10 rounded-xl transition-all duration-300 ${
+            isSpeakerMuted ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400'
+          }`}
+        >
+          {isSpeakerMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+        </Button>
+
+        <div className="w-[1px] h-6 bg-white/10 mx-1" />
+
         <Button
           variant="ghost"
           size="icon"
           onClick={forceRestart}
-          title="Relancer"
-          className="w-8 h-8 rounded-lg text-orange-300 hover:bg-orange-500/20"
+          title="Relancer WebRTC"
+          className="w-10 h-10 rounded-xl text-slate-400 hover:text-white"
         >
-          <RefreshCw size={14} />
+          <RefreshCw size={18} className={!isConnected ? "animate-spin" : ""} />
         </Button>
-      )}
 
-      {/* Error Message */}
-      <AnimatePresence>
-        {error && (
-          <motion.span
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="text-[9px] text-red-400 font-bold uppercase"
-          >
-            {error}
-          </motion.span>
-        )}
-      </AnimatePresence>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={testBip}
+          className="w-10 h-10 rounded-xl text-slate-400 hover:text-white"
+        >
+          <Bell size={18} />
+        </Button>
+      </motion.div>
+
+      {error && (
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="text-[10px] text-red-400 font-bold uppercase tracking-widest"
+        >
+          {error}
+        </motion.p>
+      )}
     </div>
   );
 };

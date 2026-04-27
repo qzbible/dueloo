@@ -676,7 +676,7 @@ async def disconnect(sid):
             del duo_rooms[match_id][sid]
             
             if role and role.startswith("player"):
-                await sio.emit("opponent_disconnected", {"role": role, "user_id": user_id}, room=match_id)
+                await sio.emit("opponent_disconnected", {"sid": sid, "role": role, "user_id": user_id}, room=match_id)
 
             if role == "spectator":
                 spectators = [v for v in duo_rooms.get(match_id, {}).values() if v.get("role") == "spectator"]
@@ -1159,12 +1159,14 @@ async def webrtc_ready(sid, data):
     
     ready_players = [v for v in room_data.values() if v.get("webrtc_ready") and v.get("role", "").startswith("player")]
     
-    if len(ready_players) >= max_p:
+    # MODIFICATION EXPERT: Don't wait for max_p. Start as soon as 2 players are ready.
+    # This allows voice chat even if some slots are empty or filled with AIs.
+    if len(ready_players) >= 2:
         # Collect all player SIDs
         player_sids = {}
         for k, v in room_data.items():
             r = v.get("role")
-            if r and r.startswith("player"):
+            if r and r.startswith("player") and v.get("webrtc_ready"):
                 player_sids[f"{r}_sid"] = k
         
         await sio.emit("start_webrtc", {
