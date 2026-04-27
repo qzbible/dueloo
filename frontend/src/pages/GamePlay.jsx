@@ -78,7 +78,13 @@ const GamePlay = () => {
       setVoiceChatKey(prev => prev + 1);
     };
     window.addEventListener('force_webrtc_restart', handleRestart);
-    return () => window.removeEventListener('force_webrtc_restart', handleRestart);
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+      window.removeEventListener('force_webrtc_restart', handleRestart);
+    };
   }, [modeId]);
 
   const initGame = async () => {
@@ -240,6 +246,11 @@ const GamePlay = () => {
     socketRef.current.on('spectator_count', (data) => {
       console.log('[Socket][GamePlay] spectator_count:', data.count);
       setSpectatorCount(data.count);
+    });
+
+    socketRef.current.on('opponent_disconnected', (data) => {
+      console.log('[Socket][GamePlay] opponent_disconnected:', data);
+      toast.info("Un joueur s'est déconnecté de la partie.");
     });
   };
 

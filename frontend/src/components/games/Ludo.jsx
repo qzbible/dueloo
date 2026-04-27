@@ -91,18 +91,51 @@ const getCoord = (color, pos, id) => {
   return MAIN_PATH[(SPAWN_IDX[color] + pos) % 52];
 };
 
+const checkCapture = (pieces, color, targetPos) => {
+  if (targetPos < 0 || targetPos >= 52) return false;
+  const absPos = (SPAWN_IDX[color] + targetPos) % 52;
+  const [r, c] = MAIN_PATH[absPos];
+  if (SAFE.has(`${r},${c}`)) return false;
+  
+  return Object.entries(pieces).some(([oppColor, oppPieces]) => {
+    if (oppColor === color) return false;
+    return oppPieces.some(p => p >= 0 && p < 52 && (SPAWN_IDX[oppColor] + p) % 52 === absPos);
+  });
+};
+
 // ─── VALID MOVES ──────────────────────────────────────────────────────────────
-const getValid = (color, pieces, dice) =>
-  (pieces[color] ?? []).reduce((acc, pos, id) => {
+const getValid = (color, pieces, dice, restrictedPieceId = null) => {
+  const piecesList = pieces[color] ?? [];
+  const normalValid = piecesList.reduce((acc, pos, id) => {
     if (pos === 57) return acc;
-    // Release from jail to own base
-    if (pos <= -10 && dice === 6) return [...acc, id];
-    // Move from base to spawn
-    if (pos === -1 && dice === 6) return [...acc, id];
-    // Normal move
-    if (pos >= 0 && pos + dice <= 57) return [...acc, id];
-    return acc;
+    if (id === restrictedPieceId) return acc;
+    
+    let targetPos;
+    if (pos <= -10) { 
+      if (dice === 6) targetPos = -1; 
+      else return acc; 
+    }
+    else if (pos === -1) { 
+      if (dice === 6) targetPos = 0; 
+      else return acc; 
+    }
+    else {
+      targetPos = pos + dice;
+      if (targetPos > 57) return acc;
+    }
+    return [...acc, { id, targetPos }];
   }, []);
+  
+  if (normalValid.length === 0) return [];
+  
+  // Mandatory capture rule: if any move captures, only capture moves are valid
+  const captureMoves = normalValid.filter(m => checkCapture(pieces, color, m.targetPos));
+  if (captureMoves.length > 0) {
+    return captureMoves.map(m => m.id);
+  }
+  
+  return normalValid.map(m => m.id);
+};
 
 // ─── STYLE MAP ────────────────────────────────────────────────────────────────
 const COLOR_META = {
@@ -178,7 +211,7 @@ const clone = obj => JSON.parse(JSON.stringify(obj));
 // ─── INITIAL STATE ────────────────────────────────────────────────────────────
 const INIT = {
   pieces: { R:[-1,-1,-1,-1], G:[-1,-1,-1,-1], Y:[-1,-1,-1,-1], B:[-1,-1,-1,-1] },
-  turn: 'R', dice: null, rolled: false, winner: null,
+  turn: 'R', dice: null, rolled: false, winner: null, restrictedPieceId: null,
 };
 
 const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove, bothReady, isSpectator = false }) => {
@@ -186,19 +219,21 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove, bot
   const [gs, setGs]               = useState(() => {
     const saved = duelMode?.recovered?.pieces ? duelMode.recovered
                 : duelMode?.gameData?.pieces  ? duelMode.gameData : null;
+    if (saved && saved.restrictedPieceId === undefined) saved.restrictedPieceId = null;
     return saved ?? INIT;
   });
-  const gsRef                      = useRef(gs);          // always fresh state
+  const gsRef                      = useRef(gs);
   const [animPiece, setAnimPiece]  = useState(null);
   const [rolling, setRolling]      = useState(false);
   const [shakeBoard, setShakeBoard]= useState(false);
   const [captureKey, setCaptureKey]= useState(null);
+  const [showRules, setShowRules]  = useState(false);
   const aiRunningRef               = useRef(false);
 
   // Keep gsRef in sync
   useEffect(() => { gsRef.current = gs; }, [gs]);
 
-  const { pieces, turn, dice, rolled, winner } = gs;
+  const { pieces, turn, dice, rolled, winner, restrictedPieceId } = gs;
 
   // ── GAME MODE DETECTION ───────────────────────────────────────────────────────
   const isAIMode      = duelMode?.config?.opponent === 'ia';
@@ -223,7 +258,7 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove, bot
   const isAITurn      = isAIMode && !isSpectator && turn !== myColor && !winner && 
                         (!isMultiplayer || myRole === 'player1');
 
-  const validIds      = rolled ? getValid(turn, pieces, dice) : [];
+  const validIds      = rolled ? getValid(turn, pieces, dice, restrictedPieceId) : [];
 
   // ── NEXT PLAYER ───────────────────────────────────────────────────────────────
   const getNextPlayer = useCallback((curr) => {
@@ -260,27 +295,34 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove, bot
       const cellKey  = `${er},${ec}`;
       if (!SAFE.has(cellKey)) {
         for (const opp of Object.keys(newPieces).filter(c => c !== t)) {
-          newPieces[opp] = newPieces[opp].map(pp => {
-            if (pp >= 0 && pp < 52 && (SPAWN_IDX[opp] + pp) % 52 === absEnd) {
-              didCapture = true;
-              setCaptureKey(cellKey);
-              setTimeout(() => setCaptureKey(null), 800);
-              return JAIL_VALS[opp]; // Now jailed in their own base
+          // Check if any opponent piece is actually on THIS cell
+          const targets = newPieces[opp].map((pp, idx) => ({ pp, idx })).filter(({ pp }) => pp >= 0 && pp < 52 && (SPAWN_IDX[opp] + pp) % 52 === absEnd);
+          
+          if (targets.length > 0) {
+            didCapture = true;
+            setCaptureKey(cellKey);
+            setTimeout(() => setCaptureKey(null), 800);
+            
+            // Kick them all back to jail
+            for (const { idx } of targets) {
+              newPieces[opp][idx] = JAIL_VALS[opp];
             }
-            return pp;
-          });
+          }
         }
       }
     }
 
     const won       = newPieces[t].every(pp => pp === 57);
-    const rollAgain = (diceVal === 6 || didCapture) && !won;
+    const rollAgain = (diceVal === 6) && !won;
+    const isSixCapture = diceVal === 6 && didCapture;
+
     return {
       pieces:  newPieces,
       turn:    rollAgain ? t : getNextPlayer(t),
       dice:    null,
       rolled:  false,
       winner:  won ? t : null,
+      restrictedPieceId: isSixCapture ? pieceId : null,
     };
   }, [getNextPlayer]);
 
@@ -356,7 +398,7 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove, bot
     if (rolled && !rolling && !winner && !isAITurn && validIds.length === 0) {
       const t = setTimeout(() => {
         setGs(prev => {
-          const next = { ...prev, dice: null, rolled: false, turn: getNextPlayer(prev.turn) };
+          const next = { ...prev, dice: null, rolled: false, turn: getNextPlayer(prev.turn), restrictedPieceId: null };
           if (isMultiplayer && onMove) onMove({ type: 'ludo_state', id: Math.random().toString(), ...next });
           return next;
         });
@@ -394,11 +436,11 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove, bot
 
         // 2. Read latest state and valid moves
         const current = gsRef.current;
-        const valid   = getValid(current.turn, current.pieces, val);
+        const valid   = getValid(current.turn, current.pieces, val, current.restrictedPieceId);
 
         // If the AI has no valid moves (e.g. rolled a 3 while stuck in base), pass turn clearly
         if (valid.length === 0) {
-          const next = { ...current, dice: null, rolled: false, turn: getNextPlayer(current.turn) };
+          const next = { ...current, dice: null, rolled: false, turn: getNextPlayer(current.turn), restrictedPieceId: null };
           setGs(next);
           if (isMultiplayer && onMove) onMove({ type: 'ludo_state', id: Math.random().toString(), ...next });
           return;
@@ -517,6 +559,13 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove, bot
               Vous : {myColor === 'R' ? 'Rouge' : myColor === 'B' ? 'Bleu' : myColor === 'G' ? 'Vert' : 'Jaune'}
             </span>
           )}
+          <button 
+            onClick={() => setShowRules(true)}
+            className="ml-auto w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center border border-white/20 transition-all active:scale-95"
+            title="Règles du jeu"
+          >
+            <span className="text-white font-serif italic font-bold">i</span>
+          </button>
         </div>
 
         {/* Dice button */}
@@ -697,6 +746,108 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove, bot
           );
         })}
       </div>
+
+      {/* ── RULES MODAL ────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showRules && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowRules(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative w-full max-w-lg bg-slate-900 border border-white/20 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]"
+            >
+              {/* Header */}
+              <div className="p-6 border-b border-white/10 flex items-center justify-between bg-gradient-to-r from-blue-600/20 to-purple-600/20">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
+                    <span className="text-xl font-serif italic font-black text-white">i</span>
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-white">Guide de Ludo Pro</h3>
+                    <p className="text-[10px] text-blue-300 uppercase tracking-widest font-bold">Règles & Stratégies</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowRules(false)}
+                  className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors"
+                >
+                  <span className="text-2xl text-white/50">&times;</span>
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="p-6 overflow-y-auto custom-scrollbar space-y-6">
+                <section>
+                  <h4 className="text-blue-400 text-xs font-black uppercase tracking-widest mb-3 flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                    Objectif principal
+                  </h4>
+                  <p className="text-slate-300 text-sm leading-relaxed">
+                    Soyez le premier à amener vos <span className="text-white font-bold">4 pions</span> au centre du plateau (le Trône). 
+                    Le parcours suit une boucle périphérique avant d'entrer dans votre colonne de couleur.
+                  </p>
+                </section>
+
+                <section className="bg-white/5 p-4 rounded-2xl border border-white/5">
+                  <h4 className="text-yellow-400 text-xs font-black uppercase tracking-widest mb-3 flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-yellow-400"></span>
+                    Mouvements de base
+                  </h4>
+                  <ul className="space-y-3">
+                    <li className="flex gap-3 text-sm">
+                      <span className="text-yellow-400 font-bold">6</span>
+                      <span className="text-slate-300">Indispensable pour <span className="text-white font-bold">sortir un pion</span> de la base ou pour obtenir un <span className="text-white font-bold">lancer bonus</span>.</span>
+                    </li>
+                    <li className="flex gap-3 text-sm">
+                      <span className="text-green-400">🏰</span>
+                      <span className="text-slate-300">Les cases avec une <span className="text-white font-bold">étoile</span> sont des zones de sécurité : on ne peut pas vous y manger.</span>
+                    </li>
+                  </ul>
+                </section>
+
+                <section>
+                  <h4 className="text-red-400 text-xs font-black uppercase tracking-widest mb-3 flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-400"></span>
+                    Règles Compétitives (Expert)
+                  </h4>
+                  <div className="space-y-4">
+                    <div className="border-l-2 border-red-500/30 pl-4 py-1">
+                      <p className="text-white font-bold text-sm mb-1">🛡️ Capture Obligatoire</p>
+                      <p className="text-slate-400 text-xs">Si l'un de vos mouvements permet de manger un pion adverse, vous <span className="text-red-400 font-bold italic">devez</span> le faire. Les autres pions sont bloqués.</p>
+                    </div>
+                    <div className="border-l-2 border-orange-500/30 pl-4 py-1">
+                      <p className="text-white font-bold text-sm mb-1">🎲 Bonus Limité</p>
+                      <p className="text-slate-400 text-xs">Seul le chiffre <span className="text-orange-400 font-bold">6</span> donne droit à un lancer supplémentaire. Manger un pion avec un chiffre inférieur ne donne pas de bonus.</p>
+                    </div>
+                    <div className="border-l-2 border-purple-500/30 pl-4 py-1">
+                      <p className="text-white font-bold text-sm mb-1">⚔️ Restriction Post-Capture</p>
+                      <p className="text-slate-400 text-xs">Si vous mangez un pion avec un <span className="text-purple-400 font-bold">6</span>, ce pion spécifique est immobilisé pour le lancer bonus qui suit.</p>
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              {/* Footer */}
+              <div className="p-6 border-t border-white/10 bg-white/5">
+                <button 
+                  onClick={() => setShowRules(false)}
+                  className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-2xl transition-all shadow-lg shadow-blue-600/20 active:scale-95"
+                >
+                  J'ai compris, je joue !
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

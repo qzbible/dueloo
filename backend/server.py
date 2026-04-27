@@ -675,6 +675,9 @@ async def disconnect(sid):
             user_id = duo_rooms[match_id][sid].get("user_id")
             del duo_rooms[match_id][sid]
             
+            if role and role.startswith("player"):
+                await sio.emit("opponent_disconnected", {"role": role, "user_id": user_id}, room=match_id)
+
             if role == "spectator":
                 spectators = [v for v in duo_rooms.get(match_id, {}).values() if v.get("role") == "spectator"]
                 await sio.emit("spectator_count", {"count": len(spectators)}, room=match_id)
