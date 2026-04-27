@@ -17,13 +17,10 @@ const GameConfig = () => {
   const { t, lang } = useTranslation();
   const [mode, setMode] = useState(null);
   const [config, setConfig] = useState({
-    mode: 'duel',
+    matchType: 'ia', // 'ia', 'friend', 'random'
     level: 'beginner',
-    opponent: 'ia',
     time: 'none',
-    specifics: {
-      max_players: modeId === 'ludo' ? 4 : 2
-    }
+    maxPlayers: 2
   });
 
   const [waitingMatch, setWaitingMatch] = useState(false);
@@ -52,16 +49,25 @@ const GameConfig = () => {
   };
 
   const startGame = async () => {
-    if (config.opponent === 'ia') {
-      navigate(`/play/${modeId}`, { state: { config } });
+    const finalConfig = {
+      mode: (config.matchType === 'ia' && config.maxPlayers === 2) ? 'duel' : 'multi',
+      level: config.level,
+      opponent: config.matchType,
+      time: config.time,
+      specifics: {
+        max_players: config.maxPlayers
+      }
+    };
+
+    if (config.matchType === 'ia') {
+      navigate(`/play/${modeId}`, { state: { config: finalConfig } });
     } else {
-      // Duel matchmaking (Friend or Random)
+      // Social/Pro matchmaking
       try {
-        const maxPlayers = config.specifics?.max_players ?? (modeId === 'ludo' ? 4 : 2);
         const response = await axios.post(`${BACKEND_URL}/api/duo/matchmaking`, { 
-          mode: config.opponent === 'friend' ? 'friend' : 'random',
+          mode: config.matchType === 'friend' ? 'friend' : 'random',
           mode_id: modeId,
-          max_players: maxPlayers
+          max_players: config.maxPlayers
         }, { withCredentials: true });
         
         const data = response.data;
@@ -72,7 +78,7 @@ const GameConfig = () => {
           name: 'Vous',
           user_id: data.user_id
         }]);
-        setupSocket(data.match_id, data.role, data.user_id);
+        setupSocket(data.match_id, data.role, data.user_id, finalConfig);
 
       } catch (error) {
         console.error('Matchmaking error:', error);
@@ -80,7 +86,7 @@ const GameConfig = () => {
     }
   };
 
-  const setupSocket = (mId, role, uId) => {
+  const setupSocket = (mId, role, uId, finalConfig) => {
     if (socketRef.current) socketRef.current.disconnect();
 
     socketRef.current = io(BACKEND_URL, {
@@ -112,12 +118,12 @@ const GameConfig = () => {
         if (socketRef.current) socketRef.current.disconnect();
         navigate(`/play/${modeId}`, { 
           state: { 
-            config, 
+            config: finalConfig, 
             duelData: { 
               matchId: mId, 
               role, 
               userId: uId,
-              max_players: matchData?.max_players || config.specifics?.max_players || 2
+              max_players: matchData?.max_players || config.maxPlayers || 2
             } 
           } 
         });
@@ -153,7 +159,7 @@ const GameConfig = () => {
   if (!mode) return null;
 
   return (
-    <div className="min-h-screen bg-[#0a0b1e] text-white p-6 pb-20 overflow-hidden relative">
+    <div className="min-h-screen bg-[#0a0b1e] text-white p-6 pb-20 overflow-y-auto relative">
       <div className="absolute inset-0 pointer-events-none">
         <div className={`absolute top-0 right-0 w-64 h-64 bg-gradient-to-br ${mode.color} opacity-10 blur-[100px]`} />
       </div>
@@ -183,79 +189,85 @@ const GameConfig = () => {
                     <h2 className="text-2xl font-black uppercase tracking-wider">Configuration de la partie</h2>
                 </div>
 
-                <div className="grid gap-8">
-                    {/* Common Parameters */}
+                <div className="grid gap-10">
+                    {/* New Match Type Section */}
                     <div>
-                        <label className="text-sm font-bold text-blue-200/50 uppercase mb-4 block">Mode de jeu</label>
-                        <div className="grid grid-cols-2 gap-4">
-                            {['duel', 'multi'].map(m => (
-                                <button key={m} onClick={() => setConfig({...config, mode: m})} className={`p-4 rounded-xl glass-dark border-2 transition-all ${config.mode === m ? 'border-blue-500 bg-blue-500/10' : 'border-white/5'}`}>
-                                    <div className="flex flex-col items-center gap-2">
-                                        <Users className="w-6 h-6" />
-                                        <span className="font-bold capitalize">{m === 'duel' ? 'Duel (1v1)' : 'Multijoueur'}</span>
+                        <label className="text-sm font-bold text-blue-200/40 uppercase mb-4 block tracking-widest">Type de Partie</label>
+                        <div className="grid grid-cols-3 gap-4">
+                            {[
+                                { id: 'ia', icon: Cpu, label: 'Solo', desc: 'Contre l\'IA' },
+                                { id: 'friend', icon: Users, label: 'Amis', desc: 'Salon privé' },
+                                { id: 'random', icon: Zap, label: 'Public', desc: 'Matchmaking' }
+                            ].map(opt => (
+                                <button 
+                                    key={opt.id} 
+                                    onClick={() => setConfig({...config, matchType: opt.id, maxPlayers: (opt.id === 'ia' ? 2 : 4)})} 
+                                    className={`p-5 rounded-[2rem] glass-dark border-2 transition-all flex flex-col items-center gap-2 group ${config.matchType === opt.id ? 'border-blue-500 bg-blue-500/10' : 'border-white/5 hover:border-white/20'}`}
+                                >
+                                    <div className={`p-3 rounded-2xl ${config.matchType === opt.id ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20' : 'bg-white/5 text-blue-200/40 group-hover:bg-white/10'}`}>
+                                        <opt.icon className="w-6 h-6" />
+                                    </div>
+                                    <div className="text-center">
+                                        <div className={`font-black uppercase text-xs ${config.matchType === opt.id ? 'text-white' : 'text-blue-200/50'}`}>{opt.label}</div>
+                                        <div className="text-[9px] text-blue-200/20 font-bold">{opt.desc}</div>
                                     </div>
                                 </button>
                             ))}
                         </div>
                     </div>
 
-                    <div>
-                        <label className="text-sm font-bold text-blue-200/50 uppercase mb-4 block">Niveau</label>
-                        <div className="flex gap-2 bg-white/5 p-1.5 rounded-2xl">
-                            {['beginner', 'intermediate', 'expert'].map(l => (
-                                <button key={l} onClick={() => setConfig({...config, level: l})} className={`flex-1 py-3 rounded-xl font-bold transition-all ${config.level === l ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-blue-100/40 hover:text-white'}`}>
-                                    {l === 'beginner' ? 'Débutant' : l === 'intermediate' ? 'Intermédiaire' : 'Expert'}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div>
-                        <label className="text-sm font-bold text-blue-200/50 uppercase mb-4 block">Adversaire</label>
-                        <div className="grid grid-cols-3 gap-3 text-sm">
-                            {[
-                                { id: 'ia', icon: Cpu, label: 'IA' },
-                                { id: 'friend', icon: Users, label: 'Ami' },
-                                { id: 'random', icon: Zap, label: 'Aléatoire' }
-                            ].map(opt => (
-                                <button key={opt.id} onClick={() => setConfig({...config, opponent: opt.id})} className={`p-3 rounded-xl glass-dark border transition-all flex items-center gap-2 justify-center ${config.opponent === opt.id ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5' : 'border-white/5 text-blue-100/40'}`}>
-                                    <opt.icon className="w-4 h-4" />
-                                    <span className="font-bold">{opt.label}</span>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {modeId === 'ludo' && config.mode === 'multi' && (
-                        <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-                            <label className="text-sm font-bold text-blue-200/50 uppercase mb-4 block text-center">Nombre de joueurs</label>
-                            <div className="flex gap-4 bg-white/5 p-2 rounded-2xl border border-white/5">
+                    {modeId === 'ludo' && (
+                        <div className="animate-in fade-in zoom-in-95 duration-500">
+                            <label className="text-sm font-bold text-blue-200/40 uppercase mb-4 block tracking-widest text-center">
+                                {config.matchType === 'ia' ? 'Nombre d\'adversaires' : 'Nombre de joueurs'}
+                            </label>
+                            <div className="flex gap-4 bg-white/5 p-2 rounded-[2rem] border border-white/5">
                                 {[2, 3, 4].map(num => (
                                     <button 
                                         key={num} 
-                                        onClick={() => setConfig({...config, specifics: {...config.specifics, max_players: num}})}
-                                        className={`flex-1 py-4 rounded-xl font-black text-lg transition-all ${config.specifics.max_players === num || (!config.specifics.max_players && num === 4) ? 'bg-gradient-to-br from-blue-500 to-purple-600 text-white shadow-lg' : 'text-blue-100/40 hover:bg-white/5'}`}
+                                        onClick={() => setConfig({...config, maxPlayers: num})}
+                                        className={`flex-1 py-4 rounded-2xl font-black text-lg transition-all ${config.maxPlayers === num ? 'bg-gradient-to-br from-blue-500 to-purple-600 text-white shadow-xl scale-105' : 'text-blue-100/30 hover:bg-white/5'}`}
                                     >
-                                        {num}
+                                        {config.matchType === 'ia' ? num - 1 : num}
+                                        <span className="text-[10px] ml-1 opacity-50 block font-normal">
+                                            {config.matchType === 'ia' ? 'IA' : 'Joueurs'}
+                                        </span>
                                     </button>
                                 ))}
                             </div>
-                            <p className="text-[10px] text-blue-200/40 mt-3 text-center italic">Les couleurs seront attribuées dans l'ordre : Rouge, Vert, Jaune, Bleu.</p>
                         </div>
                     )}
 
-                    <div>
-                        <label className="text-sm font-bold text-blue-200/50 uppercase mb-4 block">Temps de réflexion</label>
-                        <select 
-                            value={config.time} 
-                            onChange={(e) => setConfig({...config, time: e.target.value})}
-                            className="w-full bg-white/5 border border-white/5 rounded-xl px-4 py-3 text-white font-bold outline-none focus:border-blue-500/50 transition-colors"
-                        >
-                            <option value="none" className="bg-[#0a0b1e]">Sans limite</option>
-                            <option value="10" className="bg-[#0a0b1e]">Par coup : 10s</option>
-                            <option value="30" className="bg-[#0a0b1e]">Par coup : 30s</option>
-                            <option value="60" className="bg-[#0a0b1e]">Par coup : 1m</option>
-                        </select>
+                    <div className="grid grid-cols-2 gap-8">
+                        <div>
+                            <label className="text-sm font-bold text-blue-200/40 uppercase mb-4 block tracking-widest">Niveau</label>
+                            <div className="flex bg-white/5 p-1.5 rounded-2xl">
+                                {['beginner', 'intermediate', 'expert'].map(l => (
+                                    <button 
+                                        key={l} 
+                                        onClick={() => setConfig({...config, level: l})} 
+                                        className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-tighter transition-all ${config.level === l ? 'bg-blue-600 text-white' : 'text-blue-100/30 hover:text-white'}`}
+                                    >
+                                        {l === 'beginner' ? 'Facile' : l === 'intermediate' ? 'Moyen' : 'Expert'}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="text-sm font-bold text-blue-200/40 uppercase mb-4 block tracking-widest">Réflexion</label>
+                            <select 
+                                value={config.time} 
+                                onChange={(e) => setConfig({...config, time: e.target.value})}
+                                className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-2.5 text-xs text-white font-black outline-none focus:border-blue-500/50 transition-colors appearance-none"
+                                style={{ backgroundImage: 'linear-gradient(45deg, transparent 50%, gray 50%), linear-gradient(135deg, gray 50%, transparent 50%)', backgroundPosition: 'calc(100% - 20px) calc(1em + 2px), calc(100% - 15px) calc(1em + 2px)', backgroundSize: '5px 5px, 5px 5px', backgroundRepeat: 'no-repeat' }}
+                            >
+                                <option value="none" className="bg-[#0a0b1e]">Sans limite</option>
+                                <option value="10" className="bg-[#0a0b1e]">10 secondes</option>
+                                <option value="30" className="bg-[#0a0b1e]">30 secondes</option>
+                                <option value="60" className="bg-[#0a0b1e]">1 minute</option>
+                            </select>
+                        </div>
                     </div>
 
                     {/* Logic for specific mode parameters would go here */}

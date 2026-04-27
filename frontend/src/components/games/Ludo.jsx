@@ -201,8 +201,8 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove, bot
   const { pieces, turn, dice, rolled, winner } = gs;
 
   // ── GAME MODE DETECTION ───────────────────────────────────────────────────────
+  const isAIMode      = duelMode?.config?.opponent === 'ia';
   const isMultiplayer = !!(duelMode?.matchId || duelMode?.gameData?.match_id);
-  const isAIMode      = !isMultiplayer && (duelMode?.config?.opponent === 'ia');
   const maxP          = duelMode?.max_players || 
                         duelMode?.gameData?.max_players || 
                         duelMode?.config?.specifics?.max_players || 2;
@@ -213,9 +213,15 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove, bot
   const ROLE_COLOR    = maxP === 2 ? { player1:'R', player2:'B' } :
                         maxP === 3 ? { player1:'R', player2:'B', player3:'G' } : 
                                      { player1:'R', player2:'G', player3:'Y', player4:'B' };
-  const myColor       = isMultiplayer ? (ROLE_COLOR[duelMode?.role] || null) : 'R';
+
+  const myRole        = duelMode?.role || 'player1';
+  const myColor       = ROLE_COLOR[myRole] || 'R';
   const isHumanTurn   = !isSpectator && turn === myColor && (!isMultiplayer || bothReady);
-  const isAITurn      = isAIMode && !isSpectator && turn !== myColor && !winner;
+  
+  // AI plays if it's AI mode AND it's not the human's turn.
+  // In multiplayer (spectatable) AI games, ONLY player1 (host) runs the AI locally.
+  const isAITurn      = isAIMode && !isSpectator && turn !== myColor && !winner && 
+                        (!isMultiplayer || myRole === 'player1');
 
   const validIds      = rolled ? getValid(turn, pieces, dice) : [];
 
@@ -371,6 +377,7 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove, bot
         await sleep(1000);
         
         // 1. Roll the dice
+        if (isMultiplayer && onMove) onMove({ type: 'ludo_rolling', id: Math.random().toString() });
         setRolling(true);
         setShakeBoard(true);
         setTimeout(() => setShakeBoard(false), 300);
@@ -378,6 +385,7 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove, bot
         const val = Math.floor(Math.random() * 6) + 1;
         
         // Force the AI's roll into the global state so the human spectator sees it
+        if (isMultiplayer && onMove) onMove({ type: 'ludo_dice', diceVal: val, id: Math.random().toString() });
         setGs(prev => ({ ...prev, dice: val, rolled: true }));
         setRolling(false);
         
@@ -392,6 +400,7 @@ const Ludo = ({ onSubmit, duelMode, opponentMove, opponentMoveQueue, onMove, bot
         if (valid.length === 0) {
           const next = { ...current, dice: null, rolled: false, turn: getNextPlayer(current.turn) };
           setGs(next);
+          if (isMultiplayer && onMove) onMove({ type: 'ludo_state', id: Math.random().toString(), ...next });
           return;
         }
 
