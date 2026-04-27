@@ -28,10 +28,10 @@ const buildMainPath = () => {
   for (let r = 5; r >= 0; r--) p.push([r, 6]);        // idx 5-10  (6)
   p.push([0, 7]); p.push([0, 8]);                     // idx 11-12 (2) → total 13
 
-  // Green segment (13): col8 down (6) + arm cols 9-12 (4) + right bridge (3)
-  for (let r = 1; r <= 6; r++)  p.push([r, 8]);       // idx 13-18 (6)
-  for (let c = 9; c <= 12; c++) p.push([6, c]);        // idx 19-22 (4)
-  p.push([6, 13]); p.push([7, 14]); p.push([8, 14]);  // idx 23-25 (3) → total 13
+  // Green segment (13): col8 down (5) + arm row6 9-14 (6) + right bridge (2)
+  for (let r = 1; r <= 5; r++)  p.push([r, 8]);       // idx 13-17 (5)
+  for (let c = 9; c <= 14; c++) p.push([6, c]);        // idx 18-23 (6)
+  p.push([7, 14]); p.push([8, 14]);                    // idx 24-25 (2) → total 13
 
   // Yellow segment (13): arm row8 cols 13-9 (5) + col8 down rows 9-14 (6) + bottom bridge (2)
   for (let c = 13; c >= 9; c--) p.push([8, c]);       // idx 26-30 (5)
